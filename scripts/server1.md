@@ -12,11 +12,9 @@ dotnet sln server/HighloadSocial.sln add server/Application/
 dotnet sln server/HighloadSocial.sln add server/Infrastructure/
 dotnet sln server/HighloadSocial.sln add server/Domain/
 
-dotnet add server/Api/Api.csproj reference server/Application/Application.csproj
-dotnet add server/Api/Api.csproj reference server/Infrastructure/Infrastructure.csproj
-dotnet add server/Infrastructure/Infrastructure.csproj reference server/Application/
-dotnet add server/Application/Application.csproj reference server/Infrastructure/Infrastructure.csproj
 dotnet add server/Application/Application.csproj reference server/Domain/Domain.csproj
+dotnet add server/Infrastructure/Infrastructure.csproj reference server/Domain/Domain.csproj server/Application/
+dotnet add server/Api/Api.csproj reference server/Application/Application.csproj server/Infrastructure/Infrastructure.csproj
 
 rm server/Application/Class1.cs
 rm server/Infrastructure/Class1.cs
@@ -25,20 +23,24 @@ rm server/Domain/Class1.cs
 mkdir -p server/Api/Controllers
 mkdir -p server/Application/Users/Queries/GetUser
 mkdir -p server/Application/Users/Queries/SearchUsers
-mkdir -p server/Infrastructure/Snapshots
+mkdir -p server/Application/Users/DTO
 mkdir -p server/Application/Mapping
-mkdir -p server/Infrastructure/Common
+mkdir -p server/Infrastructure/Snapshots
+mkdir -p server/Infrastructure/Mapping
 mkdir -p server/Infrastructure/Repositories
 mkdir -p server/Domain/Entities
 mkdir -p server/Domain/Interfaces
 
 
-touch server/Application/Users/Queries/GetUser/GetUserDTO.cs
-touch server/Application/Users/Queries/SearchUsers/SearchUsersDTO.cs
+
+touch server/Application/DependencyInjection.cs
+touch server/Infrastructure/DependencyInjection.cs
 touch server/Domain/Entities/User.cs
 touch server/Infrastructure/Snapshots/UserSnapshot.cs
-touch server/Infrastructure/Common/PostgresConnectionFactory.cs
-touch server/Application/Mapping/MappingProfile.cs
+touch server/Application/Users/DTO/UserDTO.cs
+touch server/Application/Users/Queries/SearchUsers/SearchUsersDTO.cs
+touch server/Application/Mapping/ApplicationProfile.cs
+touch server/Infrastructure/Mapping/InfrastructureProfile.cs
 touch server/Domain/Interfaces/IUserRepository.cs
 touch server/Infrastructure/Repositories/UserRepository.cs
 touch server/Api/Controllers/UserController.cs
@@ -48,10 +50,14 @@ touch server/Application/Users/Queries/SearchUsers/SearchUsersQuery.cs
 touch server/Application/Users/Queries/SearchUsers/SearchUsersQueryHandler.cs
 
 
-dotnet add server/Application/ package AutoMapper
 dotnet add server/Application/ package MediatR
+dotnet add server/Application/ package MediatR.Extensions.Microsoft.DependencyInjection
+dotnet add server/Application/ package AutoMapper
+dotnet add server/Application/ package Microsoft.Extensions.Configuration
+dotnet add server/Infrastructure/ package AutoMapper
 dotnet add server/Infrastructure/ package Bogus
 dotnet add server/Infrastructure/ package Npgsql
+dotnet add server/Infrastructure/ package Microsoft.Extensions.Configuration
 ```
 
 
@@ -118,140 +124,120 @@ public class UserSnapshot
 
 **UserRepository.cs**
 ```csharp
-using System.Net.Sockets;
-using System.Net.Mime;
 using System;
 using System.Collections.Generic;
-using System.Data;
 using System.Threading.Tasks;
-using Bogus;
+using AutoMapper;
 using Npgsql;
-using Application.Interfaces;
-using Application.DAO;
+using Domain.Entities;
+using Domain.Interfaces;
+using Infrastructure.Snapshots;
 
-namespace Infrastructure.Repositories;
-
-public class UserRepository : IUserRepository
+namespace Infrastructure.Repositories
 {
-    private readonly string _connectionString;
-
-    public UserRepository(string connectionString)
+    public class UserRepository : IUserRepository
     {
-        _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
-    }
+        private readonly string _connectionString;
+        private readonly IMapper _mapper;
 
-    public async Task<UserDAO> GetUserByIdAsync(string userId)
-    {
-        if (string.IsNullOrEmpty(userId)) throw new ArgumentException("User ID cannot be null or empty.", nameof(userId));
-
-        using (var connection = new NpgsqlConnection(_connectionString))
+        public UserRepository(string connectionString, IMapper mapper)
         {
-            await connection.OpenAsync();
-
-            using (var command = new NpgsqlCommand("SELECT id, password_hash, first_name, second_name, birthdate, biography, city FROM users WHERE id = @id", connection))
-            {
-                command.Parameters.AddWithValue("id", userId);
-
-                using (var reader = await command.ExecuteReaderAsync())
-                {
-                    if (await reader.ReadAsync())
-                    {
-                        return new UserDAO
-                        {
-                            Id = reader.GetString(0),
-                            PasswordHash = reader.GetString(1),
-                            FirstName = reader.GetString(2),
-                            SecondName = reader.GetString(3),
-                            Birthdate = reader.GetDateTime(4),
-                            Biography = reader.IsDBNull(5) ? null : reader.GetString(5),
-                            City = reader.IsDBNull(6) ? null : reader.GetString(6)
-                        };
-                    }
-                    return null;
-                }
-            }
+            _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
+            _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
         }
-    }
 
-    public async Task<List<UserDAO>> SearchUsersAsync(string firstName, string lastName)
-    {
-        if (string.IsNullOrEmpty(firstName)) throw new ArgumentException("First name cannot be null or empty.", nameof(firstName));
-        if (string.IsNullOrEmpty(lastName)) throw new ArgumentException("Last name cannot be null or empty.", nameof(lastName));
-
-        var users = new List<UserDAO>();
-
-        using (var connection = new NpgsqlConnection(_connectionString))
+        public async Task<User> GetUserByIdAsync(string userId)
         {
-            await connection.OpenAsync();
+            if (string.IsNullOrEmpty(userId)) throw new ArgumentException("User ID cannot be null or empty.", nameof(userId));
 
-            var query = @"
-                SELECT id, password_hash, first_name, second_name, birthdate, biography, city 
-                FROM users 
-                WHERE first_name ILIKE @firstName AND second_name ILIKE @lastName";
-
-            using (var command = new NpgsqlCommand(query, connection))
+            using (var connection = new NpgsqlConnection(_connectionString))
             {
-                command.Parameters.AddWithValue("firstName", $"{firstName}%");
-                command.Parameters.AddWithValue("lastName", $"{lastName}%");
+                await connection.OpenAsync();
 
-                using (var reader = await command.ExecuteReaderAsync())
+                using (var command = new NpgsqlCommand("SELECT id, password_hash, first_name, second_name, birthdate, biography, city FROM users WHERE id = @id", connection))
                 {
-                    while (await reader.ReadAsync())
+                    command.Parameters.AddWithValue("id", userId);
+
+                    using (var reader = await command.ExecuteReaderAsync())
                     {
-                        users.Add(new UserDAO
+                        if (await reader.ReadAsync())
                         {
-                            Id = reader.GetString(0),
-                            PasswordHash = reader.GetString(1),
-                            FirstName = reader.GetString(2),
-                            SecondName = reader.GetString(3),
-                            Birthdate = reader.GetDateTime(4),
-                            Biography = reader.IsDBNull(5) ? null : reader.GetString(5),
-                            City = reader.IsDBNull(6) ? null : reader.GetString(6)
-                        });
+                            var userSnapshot = new UserSnapshot
+                            {
+                                Id = reader.GetString(0),
+                                PasswordHash = reader.GetString(1),
+                                FirstName = reader.GetString(2),
+                                SecondName = reader.GetString(3),
+                                Birthdate = reader.GetDateTime(4),
+                                Biography = reader.IsDBNull(5) ? null : reader.GetString(5),
+                                City = reader.IsDBNull(6) ? null : reader.GetString(6)
+                            };
+
+                            return _mapper.Map<User>(userSnapshot);
+                        }
+                        return null;
                     }
                 }
             }
         }
 
-        return users;
-    }
-
-    public async Task AddUserAsync(UserDAO user)
-    {
-        if (user == null) throw new ArgumentNullException(nameof(user));
-
-        var faker = new Faker();
-        var randomUsername = faker.Random.Word() + faker.Random.Word() + faker.Random.Number(1000, 9999);
-
-        using (var connection = new NpgsqlConnection(_connectionString))
+        public async Task<List<User>> SearchUsersAsync(string firstName, string lastName)
         {
-            await connection.OpenAsync();
+            if (string.IsNullOrEmpty(firstName)) throw new ArgumentException("First name cannot be null or empty.", nameof(firstName));
+            if (string.IsNullOrEmpty(lastName)) throw new ArgumentException("Last name cannot be null or empty.", nameof(lastName));
 
-            using (var command = new NpgsqlCommand("INSERT INTO users (id, password_hash, first_name, second_name, birthdate, biography, city) VALUES (@id, @passwordHash, @firstName, @secondName, @birthdate, @biography, @city)", connection))
+            var users = new List<User>();
+
+            using (var connection = new NpgsqlConnection(_connectionString))
             {
-                command.Parameters.AddWithValue("id", randomUsername);
-                command.Parameters.AddWithValue("passwordHash", user.PasswordHash);
-                command.Parameters.AddWithValue("firstName", user.FirstName);
-                command.Parameters.AddWithValue("secondName", user.SecondName);
-                command.Parameters.AddWithValue("birthdate", user.Birthdate);
-                command.Parameters.AddWithValue("biography", user.Biography ?? (object)DBNull.Value);
-                command.Parameters.AddWithValue("city", user.City ?? (object)DBNull.Value);
+                await connection.OpenAsync();
 
-                await command.ExecuteNonQueryAsync();
+                var query = @"
+                    SELECT id, password_hash, first_name, second_name, birthdate, biography, city 
+                    FROM users 
+                    WHERE first_name ILIKE @firstName AND second_name ILIKE @lastName";
+
+                using (var command = new NpgsqlCommand(query, connection))
+                {
+                    command.Parameters.AddWithValue("firstName", $"{firstName}%");
+                    command.Parameters.AddWithValue("lastName", $"{lastName}%");
+
+                    using (var reader = await command.ExecuteReaderAsync())
+                    {
+                        while (await reader.ReadAsync())
+                        {
+                            var userSnapshot = new UserSnapshot
+                            {
+                                Id = reader.GetString(0),
+                                PasswordHash = reader.GetString(1),
+                                FirstName = reader.GetString(2),
+                                SecondName = reader.GetString(3),
+                                Birthdate = reader.GetDateTime(4),
+                                Biography = reader.IsDBNull(5) ? null : reader.GetString(5),
+                                City = reader.IsDBNull(6) ? null : reader.GetString(6)
+                            };
+
+                            users.Add(_mapper.Map<User>(userSnapshot));
+                        }
+                    }
+                }
             }
+
+            return users;
         }
     }
 }
+
 ```
 
-**GetUserDTO.cs**
+**UserDTO.cs**
 ```csharp
 using System;
 using System.ComponentModel.DataAnnotations;
 
-namespace Application.Users.Queries.GetUser;
+namespace Application.Users.DTO;
 
-public record GetUserDTO(
+public record UserDTO(
     string Id,
     string FirstName,
     string SecondName,
@@ -261,59 +247,16 @@ public record GetUserDTO(
 );
 ```
 
-**SearchUsersDTO.cs**
-```csharp
-using System;
-using System.Collections.Generic;
-
-namespace Application.Users.Queries.SearchUsers
-{
-    public class SearchUsersDTO
-    {
-        public List<UserDTO> Users { get; set; } = new List<UserDTO>();
-
-        public class UserDTO
-        {
-            public string Id { get; set; }
-            public string FirstName { get; set; }
-            public string SecondName { get; set; }
-            public DateTime Birthdate { get; set; }
-            public string Biography { get; set; }
-            public string City { get; set; }
-        }
-    }
-}
-```
-
-**MappingProfile.cs**
-```csharp
-using AutoMapper;
-using Application.DTO;
-using Domain.Entities;
-using Application.DAO;
-
-namespace Application.Mapping
-{
-    public class MappingProfile : Profile
-    {
-        public MappingProfile()
-        {
-            CreateMap<UserSnapshot, User>();
-            CreateMap<User, UserDTO>();
-        }
-    }
-}
-```
-
 
 **GetUserQuery.cs**
 ```csharp
-using Application.DTO;
+using Application.Users.DTO;
+using Domain.Entities;
 using MediatR;
 
 namespace Application.Users.Queries.GetUser;
 
-public record GetUserQuery(string Id) : IRequest<GetUserDTO>;
+public record GetUserQuery(string Id) : IRequest<UserDTO>;
 ```
 
 
@@ -321,62 +264,61 @@ public record GetUserQuery(string Id) : IRequest<GetUserDTO>;
 ```csharp
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using Application.Interfaces;
-using Application.DAO;
 using Application.Users.Queries.GetUser;
 using Domain.Entities;
+using Domain.Interfaces;
 using AutoMapper;
 using MediatR;
-using Application.DTO;
+using Application.Users.DTO;
 
 namespace Application.Users.Queries.GetUser
 {
-    public class GetUserQueryHandler : IRequestHandler<GetUserQuery, GetUserDTO>
+    public class GetUserQueryHandler : IRequestHandler<GetUserQuery, UserDTO>
     {
-        private readonly IUserRepository _usersRepository;
+        private readonly IUserRepository _userRepository;
         private readonly IMapper _mapper;
 
-        public GetUserQueryHandler(IUserRepository usersRepository, IMapper mapper)
+        public GetUserQueryHandler(IUserRepository userRepository, IMapper mapper)
         {
-            _usersRepository = usersRepository;
+            _userRepository = userRepository;
             _mapper = mapper;
         }
 
         public async Task<UserDTO> Handle(GetUserQuery request, CancellationToken cancellationToken)
         {
-            UserDAO userDAO = await _usersRepository.GetUserByIdAsync(request.Id);
-            User user = _mapper.Map<User>(userDAO);
+            User user = await _userRepository.GetUserByIdAsync(request.Id);
             return _mapper.Map<UserDTO>(user);
         }
     }
 }
 ```
 
+
 **SearchUsersQuery.cs**
 ```csharp
-using Application.DTO;
+using Application.Users.DTO;
+using Domain.Entities;
 using MediatR;
 
 namespace Application.Users.Queries.SearchUsers;
 
-public record SearchUsersQuery(string first_name, string second_name) : IRequest<SearchUsersDTO>;
+public record SearchUsersQuery(string first_name, string second_name) : IRequest<List<UserDTO>>;
 ```
 
 **SearchUsersQueryHandler.cs**
 ```csharp
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using Application.Interfaces;
-using Application.DAO;
 using Application.Users.Queries.SearchUsers;
 using Domain.Entities;
 using AutoMapper;
 using MediatR;
-using Application.DTO;
+using Domain.Interfaces;
+using Application.Users.DTO;
 
 namespace Application.Users.Queries.SearchUsers
 {
-    public class SearchUsersQueryHandler : IRequestHandler<SearchUsersQuery, List<SearchUsersDTO>>
+    public class SearchUsersQueryHandler : IRequestHandler<SearchUsersQuery, List<UserDTO>>
     {
         private readonly IUserRepository _userRepository;
         private readonly IMapper _mapper;
@@ -389,9 +331,50 @@ namespace Application.Users.Queries.SearchUsers
 
         public async Task<List<UserDTO>> Handle(SearchUsersQuery request, CancellationToken cancellationToken)
         {
-            List<UserDAO> userDAOs = await _userRepository.SearchUsersAsync(request.first_name, request.second_name);
-            List<User> users = _mapper.Map<List<User>>(userDAOs);
+            List<User> users = await _userRepository.SearchUsersAsync(request.first_name, request.second_name);
             return _mapper.Map<List<UserDTO>>(users);
+        }
+    }
+}
+```
+
+
+**ApplicationProfile.cs**
+```csharp
+using Application.Users.DTO;
+using Application.Users.Queries.GetUser;
+using Application.Users.Queries.SearchUsers;
+using AutoMapper;
+using Domain.Entities;
+
+namespace Application.Mapping
+{
+    public class ApplicationProfile : Profile
+    {
+        public ApplicationProfile()
+        {
+            CreateMap<User, UserDTO>();
+        }
+    }
+}
+```
+
+**InfrastructureProfile.cs**
+```csharp
+using Application.Users.DTO;
+using Application.Users.Queries.GetUser;
+using Application.Users.Queries.SearchUsers;
+using AutoMapper;
+using Domain.Entities;
+using Infrastructure.Snapshots;
+
+namespace Infrastructure.Mapping
+{
+    public class InfrastructureProfile : Profile
+    {
+        public InfrastructureProfile()
+        {
+            CreateMap<UserSnapshot, User>();
         }
     }
 }
@@ -401,11 +384,14 @@ namespace Application.Users.Queries.SearchUsers
 ```csharp
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
-using System.Text.Json;
-using Application.DTO;
 using Application.Users.Queries.GetUser;
 using Application.Users.Queries.SearchUsers;
 using MediatR;
+using Domain.Entities;
+using AutoMapper;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using Application.Users.DTO;
 
 namespace Api.Controllers
 {
@@ -413,83 +399,171 @@ namespace Api.Controllers
     public class UserController : ControllerBase
     {
         private readonly ISender _mediator;
+        private readonly IMapper _mapper;
 
-        public UserController(ISender mediator)
+        public UserController(ISender mediator, IMapper mapper)
         {
             _mediator = mediator;
+            _mapper = mapper;
         }
 
         [AllowAnonymous]
         [HttpGet("user/get/{id}")]
         public async Task<IActionResult> GetUserByIdAsync([FromRoute] string id)
         {
-            var userResult = await _mediator.Send(new GetUserQuery(id));        
-            return Ok(userResult);
+            UserDTO user = await _mediator.Send(new GetUserQuery(id));
+            return Ok(user);
         }
 
         [AllowAnonymous]
         [HttpGet("user/search")]
         public async Task<IActionResult> SearchUsersAsync([FromQuery] string first_name, [FromQuery] string second_name)
         {
-            var usersResult = await _mediator.Send(new SearchUsersQuery(first_name,second_name));
-            return Ok(usersResult);
+            List<UserDTO> users = await _mediator.Send(new SearchUsersQuery(first_name, second_name));
+            return Ok(users);
         }
     }
 }
 ```
 
-
-**PostgresConnectionFactory.cs**
+**Application/DependencyInjection.cs**
 ```csharp
-namespace Infrastructure.Common;
+using Domain.Interfaces;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
+using AutoMapper;
+using Application.Mapping;
 
-using Npgsql;
-using System;
-
-public class PostgresConnectionFactory
+namespace Application
 {
-    private readonly string _connectionString;
-
-    public PostgresConnectionFactory()
+    public static class DependencyInjection
     {
-        _connectionString = BuildConnectionString();
-    }
+        public static IServiceCollection AddApplication(this IServiceCollection services)
+        {
+            services.AddAutoMapper(cfg => 
+            {
+                cfg.AddProfile<ApplicationProfile>();
+            }, typeof(DependencyInjection).Assembly);
 
-    private string BuildConnectionString()
-    {
-        var host = Environment.GetEnvironmentVariable("PRIMARY_DB_HOST") ?? throw new InvalidOperationException("PRIMARY_DB_HOST environment variable is not set.");
-        var port = Environment.GetEnvironmentVariable("PRIMARY_DB_PORT") ?? throw new InvalidOperationException("PRIMARY_DB_PORT environment variable is not set.");
-        var database = Environment.GetEnvironmentVariable("PRIMARY_DB_NAME") ?? throw new InvalidOperationException("PRIMARY_DB_NAME environment variable is not set.");
-        var username = Environment.GetEnvironmentVariable("PRIMARY_DB_USER") ?? throw new InvalidOperationException("PRIMARY_DB_USER environment variable is not set.");
-        var password = Environment.GetEnvironmentVariable("PRIMARY_DB_PASSWORD") ?? throw new InvalidOperationException("PRIMARY_DB_PASSWORD environment variable is not set.");
 
-        return $"Host={host};Port={port};Database={database};Username={username};Password={password};";
-    }
+            services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblies(AppDomain.CurrentDomain.GetAssemblies()));
 
-    public NpgsqlConnection CreateConnection()
-    {
-        return new NpgsqlConnection(_connectionString);
+            return services;
+        }
     }
 }
 ```
 
+**Infrastructure/DependencyInjection.cs**
+```csharp
+using Domain.Interfaces;
+using Infrastructure.Repositories;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
+using AutoMapper;
+using Infrastructure.Mapping;
+
+namespace Infrastructure
+{
+    public static class DependencyInjection
+    {
+        public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
+        {
+            services.AddAutoMapper(cfg => 
+            {
+                cfg.AddProfile<InfrastructureProfile>();
+            }, typeof(DependencyInjection).Assembly);
+
+
+            services.AddScoped<IUserRepository>(sp =>
+            {
+                var connectionString = configuration.GetSection("DatabaseSettings:ConnectionString").Value;
+                var mapper = sp.GetRequiredService<IMapper>();
+                return new UserRepository(connectionString, mapper);
+            });
+
+            return services;
+        }
+    }
+}
+```
+
+**appsettings.json**
+```json
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+  "AllowedHosts": "*",
+  "JwtSettings": {
+    "Secret": "this-is-a-very-secure-and-long-key-32-bytes-long",
+    "ExpirationTimeInMinutes": 60000,
+    "Issuer": "HighloadSocial",
+    "Audience": "HighloadSocial"
+  },
+  "RabbitMqSettings": {
+    "HostName": "rabbitmq",
+    "UserName": "guest",
+    "Password": "guest",
+    "QueueName": "my_queue"
+  },
+  "RedisSettings": {
+    "ConnectionString": "redis:6379"
+  },
+  "DatabaseSettings": {
+    "ConnectionString": "Host=pg_master;Port=5432;Database=highloadsocial;Username=postgres;Password=postgres;"
+  }  
+}
+```
+
+**appsettings.Development.json**
+```json
+{
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+  "AllowedHosts": "*",
+  "JwtSettings": {
+    "Secret": "this-is-a-very-secure-and-long-key-32-bytes-long",
+    "ExpirationTimeInMinutes": 60000,
+    "Issuer": "HighloadSocial",
+    "Audience": "HighloadSocial"
+  },
+  "RabbitMqSettings": {
+    "HostName": "localhost",
+    "UserName": "guest",
+    "Password": "guest",
+    "QueueName": "my_queue"
+  },
+  "RedisSettings": {
+    "ConnectionString": "localhost:6379"
+  },
+  "DatabaseSettings": {
+    "ConnectionString": "Host=localhost;Port=35432;Database=highloadsocial;Username=postgres;Password=postgres;"
+  }  
+}
+```
 
 **Program.cs**
 ```csharp
-using System.Net.Mime;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
-using Infrastructure.Common;
-using Application.Interfaces;
-using Infrastructure.Repositories;
-using Npgsql;
+using Application;
+using Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblies(AppDomain.CurrentDomain.GetAssemblies()));
-builder.Services.AddSingleton<PostgresConnectionFactory>();
-builder.Services.AddScoped<IUserRepository>(sp => new UserRepository(sp.GetRequiredService<PostgresConnectionFactory>().CreateConnection().ConnectionString));
+
+builder.Services.AddApplication();
+builder.Services.AddInfrastructure(builder.Configuration);
 builder.Services.AddControllers();
+
 var app = builder.Build();
 app.UseHttpsRedirection();
 app.MapControllers();
