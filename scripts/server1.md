@@ -38,7 +38,6 @@ touch server/Infrastructure/DependencyInjection.cs
 touch server/Domain/Entities/User.cs
 touch server/Infrastructure/Snapshots/UserSnapshot.cs
 touch server/Application/Users/DTO/UserDTO.cs
-touch server/Application/Users/Queries/SearchUsers/SearchUsersDTO.cs
 touch server/Application/Mapping/ApplicationProfile.cs
 touch server/Infrastructure/Mapping/InfrastructureProfile.cs
 touch server/Domain/Interfaces/IUserRepository.cs
@@ -51,7 +50,6 @@ touch server/Application/Users/Queries/SearchUsers/SearchUsersQueryHandler.cs
 
 
 dotnet add server/Application/ package MediatR
-dotnet add server/Application/ package MediatR.Extensions.Microsoft.DependencyInjection
 dotnet add server/Application/ package AutoMapper
 dotnet add server/Application/ package Microsoft.Extensions.Configuration
 dotnet add server/Infrastructure/ package AutoMapper
@@ -230,6 +228,59 @@ namespace Infrastructure.Repositories
 
 ```
 
+**InfrastructureProfile.cs**
+```csharp
+using AutoMapper;
+using Domain.Entities;
+using Infrastructure.Snapshots;
+
+namespace Infrastructure.Mapping
+{
+    public class InfrastructureProfile : Profile
+    {
+        public InfrastructureProfile()
+        {
+            CreateMap<UserSnapshot, User>();
+        }
+    }
+}
+```
+
+
+**Infrastructure/DependencyInjection.cs**
+```csharp
+using Domain.Interfaces;
+using Infrastructure.Repositories;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
+using AutoMapper;
+using Infrastructure.Mapping;
+
+namespace Infrastructure
+{
+    public static class DependencyInjection
+    {
+        public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
+        {
+            services.AddAutoMapper(cfg => 
+            {
+                cfg.AddProfile<InfrastructureProfile>();
+            }, typeof(DependencyInjection).Assembly);
+
+
+            services.AddScoped<IUserRepository>(sp =>
+            {
+                var connectionString = configuration.GetSection("DatabaseSettings:ConnectionString").Value;
+                var mapper = sp.GetRequiredService<IMapper>();
+                return new UserRepository(connectionString, mapper);
+            });
+
+            return services;
+        }
+    }
+}
+```
+
 **UserDTO.cs**
 ```csharp
 using System;
@@ -359,72 +410,6 @@ namespace Application.Mapping
 }
 ```
 
-**InfrastructureProfile.cs**
-```csharp
-using Application.Users.DTO;
-using Application.Users.Queries.GetUser;
-using Application.Users.Queries.SearchUsers;
-using AutoMapper;
-using Domain.Entities;
-using Infrastructure.Snapshots;
-
-namespace Infrastructure.Mapping
-{
-    public class InfrastructureProfile : Profile
-    {
-        public InfrastructureProfile()
-        {
-            CreateMap<UserSnapshot, User>();
-        }
-    }
-}
-```
-
-**UserController.cs**
-```csharp
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Authorization;
-using Application.Users.Queries.GetUser;
-using Application.Users.Queries.SearchUsers;
-using MediatR;
-using Domain.Entities;
-using AutoMapper;
-using System.Collections.Generic;
-using System.Threading.Tasks;
-using Application.Users.DTO;
-
-namespace Api.Controllers
-{
-    [ApiController]
-    public class UserController : ControllerBase
-    {
-        private readonly ISender _mediator;
-        private readonly IMapper _mapper;
-
-        public UserController(ISender mediator, IMapper mapper)
-        {
-            _mediator = mediator;
-            _mapper = mapper;
-        }
-
-        [AllowAnonymous]
-        [HttpGet("user/get/{id}")]
-        public async Task<IActionResult> GetUserByIdAsync([FromRoute] string id)
-        {
-            UserDTO user = await _mediator.Send(new GetUserQuery(id));
-            return Ok(user);
-        }
-
-        [AllowAnonymous]
-        [HttpGet("user/search")]
-        public async Task<IActionResult> SearchUsersAsync([FromQuery] string first_name, [FromQuery] string second_name)
-        {
-            List<UserDTO> users = await _mediator.Send(new SearchUsersQuery(first_name, second_name));
-            return Ok(users);
-        }
-    }
-}
-```
 
 **Application/DependencyInjection.cs**
 ```csharp
@@ -454,39 +439,6 @@ namespace Application
 }
 ```
 
-**Infrastructure/DependencyInjection.cs**
-```csharp
-using Domain.Interfaces;
-using Infrastructure.Repositories;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Configuration;
-using AutoMapper;
-using Infrastructure.Mapping;
-
-namespace Infrastructure
-{
-    public static class DependencyInjection
-    {
-        public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
-        {
-            services.AddAutoMapper(cfg => 
-            {
-                cfg.AddProfile<InfrastructureProfile>();
-            }, typeof(DependencyInjection).Assembly);
-
-
-            services.AddScoped<IUserRepository>(sp =>
-            {
-                var connectionString = configuration.GetSection("DatabaseSettings:ConnectionString").Value;
-                var mapper = sp.GetRequiredService<IMapper>();
-                return new UserRepository(connectionString, mapper);
-            });
-
-            return services;
-        }
-    }
-}
-```
 
 **appsettings.json**
 ```json
@@ -568,4 +520,50 @@ var app = builder.Build();
 app.UseHttpsRedirection();
 app.MapControllers();
 app.Run();
+```
+
+**UserController.cs**
+```csharp
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
+using Application.Users.Queries.GetUser;
+using Application.Users.Queries.SearchUsers;
+using MediatR;
+using Domain.Entities;
+using AutoMapper;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using Application.Users.DTO;
+
+namespace Api.Controllers
+{
+    [ApiController]
+    public class UserController : ControllerBase
+    {
+        private readonly ISender _mediator;
+        private readonly IMapper _mapper;
+
+        public UserController(ISender mediator, IMapper mapper)
+        {
+            _mediator = mediator;
+            _mapper = mapper;
+        }
+
+        [AllowAnonymous]
+        [HttpGet("user/get/{id}")]
+        public async Task<IActionResult> GetUserByIdAsync([FromRoute] string id)
+        {
+            UserDTO user = await _mediator.Send(new GetUserQuery(id));
+            return Ok(user);
+        }
+
+        [AllowAnonymous]
+        [HttpGet("user/search")]
+        public async Task<IActionResult> SearchUsersAsync([FromQuery] string first_name, [FromQuery] string second_name)
+        {
+            List<UserDTO> users = await _mediator.Send(new SearchUsersQuery(first_name, second_name));
+            return Ok(users);
+        }
+    }
+}
 ```
