@@ -2,8 +2,8 @@ import csv
 import os
 
 # Define the CSV file paths
-friends_csv_file = './db/csv/fake_friends.csv'
-sql_file_path = './db/initdb/init002_friends.sql'
+friends_csv_file = './db/csv/fake_friendships.csv'
+sql_file_path = './db/initdb/init002_friendships.sql'
 
 # Ensure the directory exists
 os.makedirs(os.path.dirname(sql_file_path), exist_ok=True)
@@ -36,7 +36,7 @@ with open(sql_file_path, mode='w') as sql_file:
         end_index = start_index + batch_size
         batch_friendships = friendships[start_index:end_index]
         
-        sql_file.write("INSERT INTO friends (user_id, friend_id) VALUES\n")
+        sql_file.write("INSERT INTO friendships (user_id, friend_id) VALUES\n")
         
         values = []
         for user_id, friend_id in batch_friendships:

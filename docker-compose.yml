@@ -47,8 +47,8 @@ services:
     container_name: rabbitmq
     restart: unless-stopped
     ports:
-      - "5672:5672"    # RabbitMQ default port
-      - "15672:15672"  # RabbitMQ management console port
+      - "5672:5672"
+      - "15672:15672"
     networks:
       - highload_net
     environment:
@@ -69,13 +69,13 @@ services:
       PRIMARY_DB_USER: postgres
       PRIMARY_DB_PASSWORD: postgres
       ASPNETCORE_ENVIRONMENT: Production
-      ASPNETCORE_URLS: "http://*:80" # Binding to all network interfaces
+      ASPNETCORE_URLS: "http://*:80"
     depends_on:
       - pg_master
     networks:
       - highload_net
     ports:
-      - "8080:80"  # Expose port 80 in the container on port 8080 on the host
+      - "8080:80"
 
 volumes:
   pg_master:

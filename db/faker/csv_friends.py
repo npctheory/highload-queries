@@ -4,7 +4,7 @@ import random
 
 # Define the CSV file paths
 users_csv_file = './db/csv/fake_users.csv'
-friends_csv_file = './db/csv/fake_friends.csv'
+friends_csv_file = './db/csv/fake_friendships.csv'
 
 # Ensure the directory exists
 os.makedirs(os.path.dirname(friends_csv_file), exist_ok=True)

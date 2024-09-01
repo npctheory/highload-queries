@@ -34,7 +34,7 @@ CREATE TABLE IF NOT EXISTS tokens (
     FOREIGN KEY (user_id) REFERENCES users(id)
 );
 
-CREATE TABLE IF NOT EXISTS friends (
+CREATE TABLE IF NOT EXISTS friendships (
     user_id VARCHAR(255) NOT NULL,
     friend_id VARCHAR(255) NOT NULL,
     PRIMARY KEY (user_id, friend_id),
