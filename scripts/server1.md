@@ -23,21 +23,43 @@ rm server/Domain/Class1.cs
 mkdir -p server/Api/Controllers
 mkdir -p server/Application/Users/Queries/GetUser
 mkdir -p server/Application/Users/Queries/SearchUsers
+mkdir -p server/Application/Users/Queries/Login
 mkdir -p server/Application/Users/DTO
 mkdir -p server/Application/Mapping
+mkdir -p server/Application/Abstractions
 mkdir -p server/Infrastructure/Snapshots
 mkdir -p server/Infrastructure/Mapping
+mkdir -p server/Infrastructure/Configuration
 mkdir -p server/Infrastructure/Repositories
+mkdir -p server/Infrastructure/Services
+mkdir -p server/Infrastructure/Generators
+mkdir -p server/Infrastructure/Providers
 mkdir -p server/Domain/Entities
 mkdir -p server/Domain/Interfaces
 
 
-
+touch server/Api/DependencyInjection.cs
 touch server/Application/DependencyInjection.cs
 touch server/Infrastructure/DependencyInjection.cs
 touch server/Domain/Entities/User.cs
 touch server/Infrastructure/Snapshots/UserSnapshot.cs
+
+touch server/Application/Abstractions/ICacheService.cs
+touch server/Application/Abstractions/IDateTimeProvider.cs
+touch server/Application/Abstractions/IEventBus.cs
+touch server/Application/Abstractions/IJwtTokenGenerator.cs
+
+
+touch server/Infrastructure/Configuration/JwtSettings.cs
+touch server/Infrastructure/Services/RedisCacheService.cs
+touch server/Infrastructure/Services/EventBus.cs
+touch server/Infrastructure/Providers/DateTimeProvider.cs
+touch server/Infrastructure/Generators/JwtTokenGenerator.cs
+
+
+
 touch server/Application/Users/DTO/UserDTO.cs
+touch server/Application/Users/DTO/TokenDTO.cs
 touch server/Application/Mapping/ApplicationProfile.cs
 touch server/Infrastructure/Mapping/InfrastructureProfile.cs
 touch server/Domain/Interfaces/IUserRepository.cs
@@ -47,15 +69,27 @@ touch server/Application/Users/Queries/GetUser/GetUserQuery.cs
 touch server/Application/Users/Queries/GetUser/GetUserQueryHandler.cs
 touch server/Application/Users/Queries/SearchUsers/SearchUsersQuery.cs
 touch server/Application/Users/Queries/SearchUsers/SearchUsersQueryHandler.cs
+touch server/Application/Users/Queries/Login/LoginQuery.cs
+touch server/Application/Users/Queries/Login/LoginQueryHandler.cs
 
 
+
+
+dotnet add server/Api/ package System.IdentityModel.Tokens.Jwt
+dotnet add server/Api/ package Microsoft.Extensions.Options
+dotnet add server/Api/ package Microsoft.Extensions.Options.ConfigurationExtensions
 dotnet add server/Application/ package MediatR
 dotnet add server/Application/ package AutoMapper
 dotnet add server/Application/ package Microsoft.Extensions.Configuration
+
+dotnet add server/Infrastructure/ package Microsoft.IdentityModel.Tokens
+dotnet add server/Infrastructure/ package System.IdentityModel.Tokens.Jwt
 dotnet add server/Infrastructure/ package AutoMapper
 dotnet add server/Infrastructure/ package Bogus
 dotnet add server/Infrastructure/ package Npgsql
-dotnet add server/Infrastructure/ package Microsoft.Extensions.Configuration
+dotnet add server/Infrastructure/ package StackExchange.Redis
+dotnet add server/Infrastructure/ package MassTransit
+dotnet add server/Infrastructure/ package MassTransit.RabbitMQ
 ```
 
 
@@ -69,7 +103,7 @@ public class User
 {
     public string Id { get; set; }
 
-    public string? Password { get; set; }
+    public string PasswordHash {get; set; }
 
     public string FirstName { get; set; }
 
@@ -246,15 +280,196 @@ namespace Infrastructure.Mapping
 }
 ```
 
+**JwtSettings.cs**
+```csharp
+namespace Infrastructure.Configuration;
+
+public class JwtSettings
+{
+    public string Secret {get; init;} = null!;
+    public int ExpirationTimeInMinutes {get;init;}
+    public string Issuer {get;init;} = null!;
+    public string Audience{get;init;} = null!;
+}
+```
+
+**JwtTokenGenerator.cs**
+```csharp
+using System.Net.Mime;
+using System;
+using System.Security.Claims;
+using System.Text;
+using Application.Abstractions;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Tokens;
+using System.IdentityModel.Tokens.Jwt;
+using Infrastructure.Configuration;
+
+namespace Infrastructure.Generators;
+
+
+public class JwtTokenGenerator : IJwtTokenGenerator
+{
+    private readonly IDateTimeProvider _dateTimeProvider;
+    private readonly JwtSettings _jwtSettings;
+
+    public JwtTokenGenerator(IDateTimeProvider dateTimeProvider, IOptions<JwtSettings> jwtOptions)
+    {
+        _dateTimeProvider = dateTimeProvider;
+        _jwtSettings = jwtOptions.Value;
+    }
+
+    public string GenerateToken(string user_id, string first_name, string second_name)
+    {
+        var signingCredentials = new SigningCredentials(
+            new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_jwtSettings.Secret)),
+            SecurityAlgorithms.HmacSha256
+        );
+
+        var claims = new[]
+        {
+            new Claim(JwtRegisteredClaimNames.Sub, user_id),
+            new Claim(JwtRegisteredClaimNames.GivenName, first_name),
+            new Claim(JwtRegisteredClaimNames.FamilyName, second_name),
+            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+        };
+
+        var securityToken = new JwtSecurityToken(
+            issuer: _jwtSettings.Issuer,
+            audience: _jwtSettings.Audience,
+            expires: _dateTimeProvider.UtcNow.AddMinutes(_jwtSettings.ExpirationTimeInMinutes),
+            claims:claims,
+            signingCredentials: signingCredentials);
+
+        return new JwtSecurityTokenHandler().WriteToken(securityToken);
+    }
+
+}
+```
+
+**DateTimeProvider.cs**
+```csharp
+namespace Infrastructure.Providers;
+
+using Application.Abstractions;
+
+public class DateTimeProvider : IDateTimeProvider
+{
+    public DateTime UtcNow => DateTime.UtcNow;
+}
+```
+
+
+**EventBus.cs**
+```csharp
+using Application.Abstractions;
+
+namespace Infrastructure.Services;
+
+public class EventBus : IEventBus
+{
+    public Task PublishAsync<T>(T message, CancellationToken cancellationtoken = default)
+    {
+        throw new NotImplementedException();
+    }
+}
+```
+
+**RedisCacheService.cs**
+```csharp
+using System;
+using System.Text.Json;
+using System.Threading;
+using System.Threading.Tasks;
+using StackExchange.Redis;
+using Application.Abstractions;
+
+namespace Application.Services
+{
+    public class RedisCacheService : ICacheService
+    {
+        private readonly IDatabase _database;
+
+        // Constructor now takes a database index
+        public RedisCacheService(IConnectionMultiplexer redis, int databaseIndex = 0)
+        {
+            _database = redis.GetDatabase(databaseIndex);
+        }
+
+        public async Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default) where T : class
+        {
+            if (string.IsNullOrWhiteSpace(key))
+                throw new ArgumentException("Key cannot be null or whitespace.", nameof(key));
+
+            var redisValue = await _database.StringGetAsync(key);
+            if (redisValue.IsNullOrEmpty)
+                return null;
+
+            return JsonSerializer.Deserialize<T>(redisValue);
+        }
+
+        public async Task<T> SetAsync<T>(string key, T value, CancellationToken cancellationToken = default) where T : class
+        {
+            if (string.IsNullOrWhiteSpace(key))
+                throw new ArgumentException("Key cannot be null or whitespace.", nameof(key));
+
+            if (value == null)
+                throw new ArgumentNullException(nameof(value));
+
+            var serializedValue = JsonSerializer.Serialize(value);
+            await _database.StringSetAsync(key, serializedValue);
+
+            return value;
+        }
+
+        public async Task RemoveAsync(string key, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(key))
+                throw new ArgumentException("Key cannot be null or whitespace.", nameof(key));
+
+            await _database.KeyDeleteAsync(key);
+        }
+
+        public async Task RemoveByPrefixAsync(string prefixKey, CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(prefixKey))
+                throw new ArgumentException("Prefix key cannot be null or whitespace.", nameof(prefixKey));
+
+            var server = GetServer();
+            var keys = server.Keys(pattern: $"{prefixKey}*");
+
+            foreach (var key in keys)
+            {
+                await _database.KeyDeleteAsync(key);
+            }
+        }
+
+        private IServer GetServer()
+        {
+            var endpoints = _database.Multiplexer.GetEndPoints();
+            return _database.Multiplexer.GetServer(endpoints[0]);
+        }
+    }
+}
+```
 
 **Infrastructure/DependencyInjection.cs**
 ```csharp
 using Domain.Interfaces;
 using Infrastructure.Repositories;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Configuration;
 using AutoMapper;
 using Infrastructure.Mapping;
+using StackExchange.Redis;
+using Application.Abstractions;
+using Application.Services;
+using Infrastructure.Services;
+using MassTransit;
+using Infrastructure.Configuration;
+using Microsoft.Extensions.Configuration;
+using Infrastructure.Generators;
+using System.Text;
+using Infrastructure.Providers;
 
 namespace Infrastructure
 {
@@ -262,11 +477,26 @@ namespace Infrastructure
     {
         public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
         {
+            services.AddSingleton<IDateTimeProvider,DateTimeProvider>();
+            services.AddSingleton<IJwtTokenGenerator,JwtTokenGenerator>();
+
+
             services.AddAutoMapper(cfg => 
             {
                 cfg.AddProfile<InfrastructureProfile>();
             }, typeof(DependencyInjection).Assembly);
 
+            var redisConnectionString = configuration.GetSection("RedisSettings:ConnectionString").Value;
+            services.AddSingleton<IConnectionMultiplexer>(sp => ConnectionMultiplexer.Connect(redisConnectionString));
+
+            services.AddSingleton<ICacheService>(sp =>
+            {
+                var redis = sp.GetRequiredService<IConnectionMultiplexer>();
+                return new RedisCacheService(redis, databaseIndex: 0);
+            });
+
+            // Register RedisMessageRepository with database 1
+            // services.AddSingleton<IMessageRepository>(sp => new RedisMessageRepository(redis, databaseIndex: 1));
 
             services.AddScoped<IUserRepository>(sp =>
             {
@@ -275,11 +505,80 @@ namespace Infrastructure
                 return new UserRepository(connectionString, mapper);
             });
 
+
+            services.AddMassTransit(busConfigurator =>
+            {
+                busConfigurator.UsingRabbitMq((context, rabbitMqConfigurator) =>
+                {
+                    var rabbitMqSettings = configuration.GetSection("RabbitMqSettings");
+
+                    rabbitMqConfigurator.Host(rabbitMqSettings["HostName"], "/", h =>
+                    {
+                        h.Username(rabbitMqSettings["UserName"]);
+                        h.Password(rabbitMqSettings["Password"]);
+                    });
+
+                    rabbitMqConfigurator.ReceiveEndpoint(rabbitMqSettings["QueueName"], endpointConfigurator =>
+                    {
+
+                    });
+                });
+            });
+            services.AddTransient<IEventBus,EventBus>();
+
             return services;
         }
     }
 }
 ```
+
+**ICacheService.cs**
+```csharp
+namespace Application.Abstractions;
+
+public interface ICacheService
+{
+    Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default)
+        where T : class;
+
+    Task<T> SetAsync<T>(string key, T value, CancellationToken cancellationToken = default)
+        where T : class;
+
+    Task RemoveAsync(string key, CancellationToken cancellationToken = default);
+
+    Task RemoveByPrefixAsync(string prefixKey, CancellationToken cancellationToken = default);
+}
+```
+**IDateTimeProvider.cs**
+```csharp
+namespace Application.Abstractions;
+
+public interface IDateTimeProvider
+{
+    DateTime UtcNow {get;}
+}
+```
+
+**IEventBus.cs**
+```csharp
+namespace Application.Abstractions;
+
+public interface IEventBus
+{
+    Task PublishAsync<T>(T message, CancellationToken cancellationtoken = default);
+}
+```
+
+**IJwtTokenGenerator.cs**
+```csharp
+namespace Application.Abstractions;
+
+public interface IJwtTokenGenerator
+{
+    string GenerateToken(string user_id,string first_name,string second_name);
+}
+```
+
 
 **UserDTO.cs**
 ```csharp
@@ -298,6 +597,18 @@ public record UserDTO(
 );
 ```
 
+**TokenDTO.cs**
+```csharp
+using System;
+using System.ComponentModel.DataAnnotations;
+
+namespace Application.Users.DTO;
+
+public class TokenDTO
+{
+    public string Value { get; set; }
+}
+```
 
 **GetUserQuery.cs**
 ```csharp
@@ -384,6 +695,88 @@ namespace Application.Users.Queries.SearchUsers
         {
             List<User> users = await _userRepository.SearchUsersAsync(request.first_name, request.second_name);
             return _mapper.Map<List<UserDTO>>(users);
+        }
+    }
+}
+```
+
+**LoginQuery.cs**
+```csharp
+using Application.Users.DTO;
+using MediatR;
+
+namespace Application.Users.Queries.Login;
+
+public record LoginQuery(string Id, string Password) : IRequest<TokenDTO>;
+```
+
+**LoginQueryHandler.cs**
+```csharp
+using System;
+using System.Text;
+using System.Threading.Tasks;
+using System.Security.Cryptography;
+using System.Collections.Generic;
+using System.Threading;
+using Application.Users.DTO;
+using Application.Abstractions;
+using Domain.Entities;
+using Domain.Interfaces;
+using AutoMapper;
+using MediatR;
+using System.Security.Claims;
+
+namespace Application.Users.Queries.Login
+{
+    public class LoginQueryHandler : IRequestHandler<LoginQuery, TokenDTO>
+    {
+        private readonly IUserRepository _userRepository;
+        private readonly IJwtTokenGenerator _jwtTokenGenerator;
+        private readonly IMapper _mapper;
+
+        public LoginQueryHandler(
+            IUserRepository userRepository,
+            IJwtTokenGenerator jwtTokenGenerator,
+            IMapper mapper)
+        {
+            _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
+            _jwtTokenGenerator = jwtTokenGenerator ?? throw new ArgumentNullException(nameof(jwtTokenGenerator));
+            _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
+        }
+
+        public async Task<TokenDTO> Handle(LoginQuery request, CancellationToken cancellationToken)
+        {
+            User user = await _userRepository.GetUserByIdAsync(request.Id);
+
+            if (user == null || !VerifyPassword(request.Password, user.PasswordHash))
+            {
+                throw new UnauthorizedAccessException("Invalid user ID or password.");
+            }
+
+            TokenDTO token = new TokenDTO
+            {
+                Value = _jwtTokenGenerator.GenerateToken(user.Id, user.FirstName, user.SecondName),
+            };
+
+
+            return token;
+        }
+
+        private bool VerifyPassword(string password, string storedPasswordHash)
+        {
+            var parts = storedPasswordHash.Split(':');
+            if (parts.Length != 2) return false;
+
+            var salt = parts[0];
+            var hash = parts[1];
+
+            using (var sha256 = SHA256.Create())
+            {
+                var computedHash = sha256.ComputeHash(Encoding.UTF8.GetBytes(password + salt));
+                var computedHashString = BitConverter.ToString(computedHash).Replace("-", "").ToLower();
+
+                return hash == computedHashString;
+            }
         }
     }
 }
@@ -502,6 +895,52 @@ namespace Application
 }
 ```
 
+**Api/DependencyInjection.cs**
+```csharp
+using System.Text;
+using Infrastructure.Configuration;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+
+namespace Api
+{
+    public static class DependencyInjection
+    {
+        public static IServiceCollection AddPresentation(this IServiceCollection services, IConfiguration configuration)
+        {
+            services.Configure<JwtSettings>(configuration.GetSection("JwtSettings"));
+            
+            var jwtSettings = configuration.GetSection("JwtSettings").Get<JwtSettings>();
+            var key = Encoding.ASCII.GetBytes(jwtSettings.Secret);
+
+            services.AddAuthentication(options =>
+            {
+                options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+                options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+            })
+            .AddJwtBearer(options =>
+            {
+                options.RequireHttpsMetadata = false;
+                options.SaveToken = true;
+                options.TokenValidationParameters = new TokenValidationParameters
+                {
+                    ValidateIssuer = true,
+                    ValidateAudience = true,
+                    ValidateLifetime = true,
+                    ValidateIssuerSigningKey = true,
+                    ValidIssuer = jwtSettings.Issuer,
+                    ValidAudience = jwtSettings.Audience,
+                    IssuerSigningKey = new SymmetricSecurityKey(key)
+                };
+            });
+
+            return services;
+        }
+    }
+}
+```
+
+
 **Program.cs**
 ```csharp
 using Microsoft.AspNetCore.Builder;
@@ -509,11 +948,16 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Application;
 using Infrastructure;
+using Api;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddApplication();
 builder.Services.AddInfrastructure(builder.Configuration);
+builder.Services.AddPresentation(builder.Configuration);
+
+
+
 builder.Services.AddControllers();
 
 var app = builder.Build();
@@ -534,6 +978,8 @@ using AutoMapper;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Application.Users.DTO;
+using System.Text.Json;
+using Application.Users.Queries.Login;
 
 namespace Api.Controllers
 {
@@ -563,6 +1009,17 @@ namespace Api.Controllers
         {
             List<UserDTO> users = await _mediator.Send(new SearchUsersQuery(first_name, second_name));
             return Ok(users);
+        }
+
+        [AllowAnonymous]
+        [HttpPost("login")]
+        public async Task<IActionResult> Login([FromBody] JsonElement jsonElement)
+        {
+            string id = jsonElement.GetProperty("id").GetString();
+            string password = jsonElement.GetProperty("password").GetString();
+
+            TokenDTO token = await _mediator.Send(new LoginQuery(id,password)); 
+            return Ok(token);
         }
     }
 }

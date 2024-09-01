@@ -8,23 +8,21 @@ mkdir -p server/Infrastructure/Providers
 mkdir -p server/Application/Users/Queries/Login
 
 
-touch server/Application/Interfaces/IDateTimeProvider.cs
-touch server/Application/Interfaces/IJwtTokenGenerator.cs
+touch server/Application/Abstractions/IDateTimeProvider.cs
+touch server/Application/Abstractions/IJwtTokenGenerator.cs
 touch server/Infrastructure/Providers/DateTimeProvider.cs
 touch server/Infrastructure/Generators/JwtTokenGenerator.cs
-touch server/Infrastructure/Common/JwtSettings.cs
-touch server/Domain/Entities/Token.cs
-touch server/Application/DAO/TokenDAO.cs
-touch server/Application/DTO/TokenDTO.cs
-touch server/Application/Interfaces/ITokenRepository.cs
-touch server/Infrastructure/Repositories/TokenRepository.cs
+touch server/Infrastructure/Configuration/JwtSettings.cs
+
+touch server/Application/Users/DTO/TokenDTO.cs
+
 touch server/Application/Users/Queries/Login/LoginQuery.cs
 touch server/Application/Users/Queries/Login/LoginQueryHandler.cs
 ```
 
 **IDateTimeProvider.cs**
 ```csharp
-namespace Application.Interfaces;
+namespace Application.Abstractions;
 
 public interface IDateTimeProvider
 {
@@ -34,7 +32,8 @@ public interface IDateTimeProvider
 **DateTimeProvider.cs**
 ```csharp
 namespace Infrastructure.Providers;
-using Application.Interfaces;
+
+using Application.Abstractions;
 
 public class DateTimeProvider : IDateTimeProvider
 {
@@ -43,7 +42,7 @@ public class DateTimeProvider : IDateTimeProvider
 ```
 **JwtSettings.cs**
 ```csharp
-namespace Infrastructure.Common;
+namespace Infrastructure.Configuration;
 
 public class JwtSettings
 {
@@ -55,7 +54,7 @@ public class JwtSettings
 ```
 **IJwtTokenGenerator.cs**
 ```csharp
-namespace Application.Interfaces;
+namespace Application.Abstractions;
 
 public interface IJwtTokenGenerator
 {
@@ -68,11 +67,11 @@ using System.Net.Mime;
 using System;
 using System.Security.Claims;
 using System.Text;
-using Application.Interfaces;
+using Application.Abstractions;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
-using Infrastructure.Common;
+using Infrastructure.Configuration;
 
 namespace Infrastructure.Generators;
 
@@ -116,175 +115,20 @@ public class JwtTokenGenerator : IJwtTokenGenerator
 }
 ```
 
-**Token.cs**
-```csharp
-using System;
-using System.ComponentModel.DataAnnotations;
 
-namespace Domain.Entities;
-
-public class Token
-{
-    public Guid Id {get; set;}
-    public string UserId { get; set; }
-    public string Value { get; set; }
-    public DateTime CreatedAt { get; set; }
-    public DateTime ExpiresAt { get; set; }
-}
-```
-**TokenDAO.cs**
-```csharp
-using System;
-using System.ComponentModel.DataAnnotations;
-
-namespace Application.DAO;
-
-public class TokenDAO
-{
-    public Guid Id { get; set; }
-    public string UserId { get; set; }
-    public string Value { get; set; }
-    public DateTime CreatedAt { get; set; }
-    public DateTime ExpiresAt { get; set; }
-}
-```
 **TokenDTO.cs**
 ```csharp
 using System;
 using System.ComponentModel.DataAnnotations;
 
-namespace Application.DTO;
+namespace Application.Users.DTO;
 
 public class TokenDTO
 {
     public string? token { get; set; }
 }
 ```
-**ITokenRepository.cs**
-```csharp
-using System;
-using System.Threading.Tasks;
-using System.Collections.Generic;
-using System.Data;
-using Application.DAO;
 
-namespace Application.Interfaces;
-public interface ITokenRepository
-{
-    Task AddTokenAsync(TokenDAO token);
-    Task<TokenDAO> GetTokenByValueAsync(string tokenValue);
-    Task<List<TokenDAO>> GetTokensByUserIdAsync(string userId);
-}
-```
-**TokenRepository.cs**
-```csharp
-using System.Net.Security;
-using System.Net.Mime;
-using System;
-using System.Threading.Tasks;
-using System.Collections.Generic;
-using System.Data;
-using Application.Interfaces;
-using Application.DAO;
-using Npgsql;
-
-namespace Infrastructure.Repositories;
-
-
-public class TokenRepository : ITokenRepository
-{
-    private readonly string _connectionString;
-
-    public TokenRepository(string connectionString)
-    {
-        _connectionString = connectionString ?? throw new ArgumentNullException(nameof(connectionString));
-    }
-
-    public async Task AddTokenAsync(TokenDAO token)
-    {
-        if (token == null) throw new ArgumentNullException(nameof(token));
-
-        using (var connection = new NpgsqlConnection(_connectionString))
-        {
-            await connection.OpenAsync();
-
-            using (var command = new NpgsqlCommand("INSERT INTO tokens (user_id, token, expires_at) VALUES (@userId, @token, @expiresAt)", connection))
-            {
-                command.Parameters.AddWithValue("userId", token.UserId);
-                command.Parameters.AddWithValue("token", token.Value);
-                command.Parameters.AddWithValue("expiresAt", token.ExpiresAt);
-
-                await command.ExecuteNonQueryAsync();
-            }
-        }
-    }
-
-    public async Task<TokenDAO> GetTokenByValueAsync(string tokenValue)
-    {
-        if (string.IsNullOrEmpty(tokenValue)) throw new ArgumentException("Token value cannot be null or empty.", nameof(tokenValue));
-
-        using (var connection = new NpgsqlConnection(_connectionString))
-        {
-            await connection.OpenAsync();
-
-            using (var command = new NpgsqlCommand("SELECT id, user_id, token, created_at, expires_at FROM tokens WHERE token = @token", connection))
-            {
-                command.Parameters.AddWithValue("token", tokenValue);
-
-                using (var reader = await command.ExecuteReaderAsync())
-                {
-                    if (await reader.ReadAsync())
-                    {
-                        return new TokenDAO
-                        {
-                            Id = reader.GetGuid(0),
-                            UserId = reader.GetString(1),
-                            Value = reader.GetString(2),
-                            CreatedAt = reader.GetDateTime(3),
-                            ExpiresAt = reader.GetDateTime(4)
-                        };
-                    }
-                    return null;
-                }
-            }
-        }
-    }
-
-    public async Task<List<TokenDAO>> GetTokensByUserIdAsync(string userId)
-    {
-        if (string.IsNullOrEmpty(userId)) throw new ArgumentException("User ID cannot be null or empty.", nameof(userId));
-
-        var tokens = new List<TokenDAO>();
-
-        using (var connection = new NpgsqlConnection(_connectionString))
-        {
-            await connection.OpenAsync();
-
-            using (var command = new NpgsqlCommand("SELECT id, user_id, token, created_at, expires_at FROM tokens WHERE user_id = @userId", connection))
-            {
-                command.Parameters.AddWithValue("userId", userId);
-
-                using (var reader = await command.ExecuteReaderAsync())
-                {
-                    while (await reader.ReadAsync())
-                    {
-                        tokens.Add(new TokenDAO
-                        {
-                            Id = reader.GetGuid(0),
-                            UserId = reader.GetString(1),
-                            Value = reader.GetString(2),
-                            CreatedAt = reader.GetDateTime(3),
-                            ExpiresAt = reader.GetDateTime(4)
-                        });
-                    }
-                }
-            }
-        }
-
-        return tokens;
-    }
-}
-```
 
 **LoginQuery.cs**
 ```csharp
@@ -316,7 +160,6 @@ namespace Application.Users.Queries.Login
     public class LoginQueryHandler : IRequestHandler<LoginQuery, TokenDTO>
     {
         private readonly IUserRepository _userRepository;
-        private readonly ITokenRepository _tokenRepository;
         private readonly IJwtTokenGenerator _jwtTokenGenerator;
         private readonly IMapper _mapper;
 
@@ -327,23 +170,20 @@ namespace Application.Users.Queries.Login
             IMapper mapper)
         {
             _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
-            _tokenRepository = tokenRepository ?? throw new ArgumentNullException(nameof(tokenRepository));
             _jwtTokenGenerator = jwtTokenGenerator ?? throw new ArgumentNullException(nameof(jwtTokenGenerator));
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
         }
 
         public async Task<TokenDTO> Handle(LoginQuery request, CancellationToken cancellationToken)
         {
-            var userDAO = await _userRepository.GetUserByIdAsync(request.Id);
+            User user = await _userRepository.GetUserByIdAsync(request.Id);
 
-            if (userDAO == null || !VerifyPassword(request.Password, userDAO.PasswordHash))
+            if (user == null || !VerifyPassword(request.Password, userDAO.PasswordHash))
             {
                 throw new UnauthorizedAccessException("Invalid user ID or password.");
             }
 
-            User user = _mapper.Map<User>(userDAO);
-
-            Token token = new Token
+            TokenDTO token = new TokenDTO
             {
                 UserId = user.Id,
                 Value = _jwtTokenGenerator.GenerateToken(user.Id, user.FirstName, user.SecondName),
@@ -351,9 +191,8 @@ namespace Application.Users.Queries.Login
                 ExpiresAt = DateTime.UtcNow.AddYears(2)
             };
 
-            await _tokenRepository.AddTokenAsync(_mapper.Map<TokenDAO>(token));
 
-            return _mapper.Map<TokenDTO>(token);
+            return token;
         }
 
         private bool VerifyPassword(string password, string storedPasswordHash)

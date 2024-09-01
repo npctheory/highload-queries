@@ -8,6 +8,8 @@ using AutoMapper;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Application.Users.DTO;
+using System.Text.Json;
+using Application.Users.Queries.Login;
 
 namespace Api.Controllers
 {
@@ -37,6 +39,17 @@ namespace Api.Controllers
         {
             List<UserDTO> users = await _mediator.Send(new SearchUsersQuery(first_name, second_name));
             return Ok(users);
+        }
+
+        [AllowAnonymous]
+        [HttpPost("login")]
+        public async Task<IActionResult> Login([FromBody] JsonElement jsonElement)
+        {
+            string id = jsonElement.GetProperty("id").GetString();
+            string password = jsonElement.GetProperty("password").GetString();
+
+            TokenDTO token = await _mediator.Send(new LoginQuery(id,password)); 
+            return Ok(token);
         }
     }
 }
