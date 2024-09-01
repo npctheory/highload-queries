@@ -16,6 +16,7 @@ dotnet add server/Application/Application.csproj reference server/Domain/Domain.
 dotnet add server/Infrastructure/Infrastructure.csproj reference server/Domain/Domain.csproj server/Application/
 dotnet add server/Api/Api.csproj reference server/Application/Application.csproj server/Infrastructure/Infrastructure.csproj
 
+rm server/Api/Api.http
 rm server/Application/Class1.cs
 rm server/Infrastructure/Class1.cs
 rm server/Domain/Class1.cs
@@ -58,24 +59,25 @@ touch server/Infrastructure/Generators/JwtTokenGenerator.cs
 
 
 
+touch server/Domain/Interfaces/IUserRepository.cs
 touch server/Application/Users/DTO/UserDTO.cs
 touch server/Application/Users/DTO/TokenDTO.cs
 touch server/Application/Mapping/ApplicationProfile.cs
-touch server/Infrastructure/Mapping/InfrastructureProfile.cs
-touch server/Domain/Interfaces/IUserRepository.cs
-touch server/Infrastructure/Repositories/UserRepository.cs
-touch server/Api/Controllers/UserController.cs
 touch server/Application/Users/Queries/GetUser/GetUserQuery.cs
 touch server/Application/Users/Queries/GetUser/GetUserQueryHandler.cs
 touch server/Application/Users/Queries/SearchUsers/SearchUsersQuery.cs
 touch server/Application/Users/Queries/SearchUsers/SearchUsersQueryHandler.cs
 touch server/Application/Users/Queries/Login/LoginQuery.cs
 touch server/Application/Users/Queries/Login/LoginQueryHandler.cs
+touch server/Infrastructure/Mapping/InfrastructureProfile.cs
+touch server/Infrastructure/Repositories/UserRepository.cs
+touch server/Api/Controllers/UserController.cs
+touch server/Api/Dockerfile
 
 
 
 
-dotnet add server/Api/ package System.IdentityModel.Tokens.Jwt
+dotnet add server/Api/ package Microsoft.AspNetCore.Authentication.JwtBearer
 dotnet add server/Api/ package Microsoft.Extensions.Options
 dotnet add server/Api/ package Microsoft.Extensions.Options.ConfigurationExtensions
 dotnet add server/Application/ package MediatR
@@ -259,7 +261,6 @@ namespace Infrastructure.Repositories
         }
     }
 }
-
 ```
 
 **InfrastructureProfile.cs**
@@ -275,6 +276,307 @@ namespace Infrastructure.Mapping
         public InfrastructureProfile()
         {
             CreateMap<UserSnapshot, User>();
+        }
+    }
+}
+```
+
+**ICacheService.cs**
+```csharp
+namespace Application.Abstractions;
+
+public interface ICacheService
+{
+    Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default)
+        where T : class;
+
+    Task<T> SetAsync<T>(string key, T value, CancellationToken cancellationToken = default)
+        where T : class;
+
+    Task RemoveAsync(string key, CancellationToken cancellationToken = default);
+
+    Task RemoveByPrefixAsync(string prefixKey, CancellationToken cancellationToken = default);
+}
+```
+**IDateTimeProvider.cs**
+```csharp
+namespace Application.Abstractions;
+
+public interface IDateTimeProvider
+{
+    DateTime UtcNow {get;}
+}
+```
+
+**IEventBus.cs**
+```csharp
+namespace Application.Abstractions;
+
+public interface IEventBus
+{
+    Task PublishAsync<T>(T message, CancellationToken cancellationtoken = default);
+}
+```
+
+**IJwtTokenGenerator.cs**
+```csharp
+namespace Application.Abstractions;
+
+public interface IJwtTokenGenerator
+{
+    string GenerateToken(string user_id,string first_name,string second_name);
+}
+```
+
+
+
+**UserDTO.cs**
+```csharp
+using System;
+using System.ComponentModel.DataAnnotations;
+
+namespace Application.Users.DTO;
+
+public record UserDTO(
+    string Id,
+    string FirstName,
+    string SecondName,
+    DateTime Birthdate,
+    string Biography,
+    string City
+);
+```
+
+**TokenDTO.cs**
+```csharp
+using System;
+using System.ComponentModel.DataAnnotations;
+
+namespace Application.Users.DTO;
+
+public class TokenDTO
+{
+    public string Value { get; set; }
+}
+```
+
+**GetUserQuery.cs**
+```csharp
+using Application.Users.DTO;
+using Domain.Entities;
+using MediatR;
+
+namespace Application.Users.Queries.GetUser;
+
+public record GetUserQuery(string Id) : IRequest<UserDTO>;
+```
+
+
+**GetUserQueryHandler.cs**
+```csharp
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using Application.Users.Queries.GetUser;
+using Domain.Entities;
+using Domain.Interfaces;
+using AutoMapper;
+using MediatR;
+using Application.Users.DTO;
+
+namespace Application.Users.Queries.GetUser
+{
+    public class GetUserQueryHandler : IRequestHandler<GetUserQuery, UserDTO>
+    {
+        private readonly IUserRepository _userRepository;
+        private readonly IMapper _mapper;
+
+        public GetUserQueryHandler(IUserRepository userRepository, IMapper mapper)
+        {
+            _userRepository = userRepository;
+            _mapper = mapper;
+        }
+
+        public async Task<UserDTO> Handle(GetUserQuery request, CancellationToken cancellationToken)
+        {
+            User user = await _userRepository.GetUserByIdAsync(request.Id);
+            return _mapper.Map<UserDTO>(user);
+        }
+    }
+}
+```
+
+
+**SearchUsersQuery.cs**
+```csharp
+using Application.Users.DTO;
+using Domain.Entities;
+using MediatR;
+
+namespace Application.Users.Queries.SearchUsers;
+
+public record SearchUsersQuery(string first_name, string second_name) : IRequest<List<UserDTO>>;
+```
+
+**SearchUsersQueryHandler.cs**
+```csharp
+using System.Collections.Generic;
+using System.Threading.Tasks;
+using Application.Users.Queries.SearchUsers;
+using Domain.Entities;
+using AutoMapper;
+using MediatR;
+using Domain.Interfaces;
+using Application.Users.DTO;
+
+namespace Application.Users.Queries.SearchUsers
+{
+    public class SearchUsersQueryHandler : IRequestHandler<SearchUsersQuery, List<UserDTO>>
+    {
+        private readonly IUserRepository _userRepository;
+        private readonly IMapper _mapper;
+
+        public SearchUsersQueryHandler(IUserRepository userRepository, IMapper mapper)
+        {
+            _userRepository = userRepository;
+            _mapper = mapper;
+        }
+
+        public async Task<List<UserDTO>> Handle(SearchUsersQuery request, CancellationToken cancellationToken)
+        {
+            List<User> users = await _userRepository.SearchUsersAsync(request.first_name, request.second_name);
+            return _mapper.Map<List<UserDTO>>(users);
+        }
+    }
+}
+```
+
+**LoginQuery.cs**
+```csharp
+using Application.Users.DTO;
+using MediatR;
+
+namespace Application.Users.Queries.Login;
+
+public record LoginQuery(string Id, string Password) : IRequest<TokenDTO>;
+```
+
+**LoginQueryHandler.cs**
+```csharp
+using System;
+using System.Text;
+using System.Threading.Tasks;
+using System.Security.Cryptography;
+using System.Collections.Generic;
+using System.Threading;
+using Application.Users.DTO;
+using Application.Abstractions;
+using Domain.Entities;
+using Domain.Interfaces;
+using AutoMapper;
+using MediatR;
+using System.Security.Claims;
+
+namespace Application.Users.Queries.Login
+{
+    public class LoginQueryHandler : IRequestHandler<LoginQuery, TokenDTO>
+    {
+        private readonly IUserRepository _userRepository;
+        private readonly IJwtTokenGenerator _jwtTokenGenerator;
+        private readonly IMapper _mapper;
+
+        public LoginQueryHandler(
+            IUserRepository userRepository,
+            IJwtTokenGenerator jwtTokenGenerator,
+            IMapper mapper)
+        {
+            _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
+            _jwtTokenGenerator = jwtTokenGenerator ?? throw new ArgumentNullException(nameof(jwtTokenGenerator));
+            _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
+        }
+
+        public async Task<TokenDTO> Handle(LoginQuery request, CancellationToken cancellationToken)
+        {
+            User user = await _userRepository.GetUserByIdAsync(request.Id);
+
+            if (user == null || !VerifyPassword(request.Password, user.PasswordHash))
+            {
+                throw new UnauthorizedAccessException("Invalid user ID or password.");
+            }
+
+            TokenDTO token = new TokenDTO
+            {
+                Value = _jwtTokenGenerator.GenerateToken(user.Id, user.FirstName, user.SecondName),
+            };
+
+
+            return token;
+        }
+
+        private bool VerifyPassword(string password, string storedPasswordHash)
+        {
+            var parts = storedPasswordHash.Split(':');
+            if (parts.Length != 2) return false;
+
+            var salt = parts[0];
+            var hash = parts[1];
+
+            using (var sha256 = SHA256.Create())
+            {
+                var computedHash = sha256.ComputeHash(Encoding.UTF8.GetBytes(password + salt));
+                var computedHashString = BitConverter.ToString(computedHash).Replace("-", "").ToLower();
+
+                return hash == computedHashString;
+            }
+        }
+    }
+}
+```
+
+
+**ApplicationProfile.cs**
+```csharp
+using Application.Users.DTO;
+using Application.Users.Queries.GetUser;
+using Application.Users.Queries.SearchUsers;
+using AutoMapper;
+using Domain.Entities;
+
+namespace Application.Mapping
+{
+    public class ApplicationProfile : Profile
+    {
+        public ApplicationProfile()
+        {
+            CreateMap<User, UserDTO>();
+        }
+    }
+}
+```
+
+
+**Application/DependencyInjection.cs**
+```csharp
+using Domain.Interfaces;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Configuration;
+using AutoMapper;
+using Application.Mapping;
+
+namespace Application
+{
+    public static class DependencyInjection
+    {
+        public static IServiceCollection AddApplication(this IServiceCollection services)
+        {
+            services.AddAutoMapper(cfg => 
+            {
+                cfg.AddProfile<ApplicationProfile>();
+            }, typeof(DependencyInjection).Assembly);
+
+
+            services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblies(AppDomain.CurrentDomain.GetAssemblies()));
+
+            return services;
         }
     }
 }
@@ -532,305 +834,6 @@ namespace Infrastructure
 }
 ```
 
-**ICacheService.cs**
-```csharp
-namespace Application.Abstractions;
-
-public interface ICacheService
-{
-    Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default)
-        where T : class;
-
-    Task<T> SetAsync<T>(string key, T value, CancellationToken cancellationToken = default)
-        where T : class;
-
-    Task RemoveAsync(string key, CancellationToken cancellationToken = default);
-
-    Task RemoveByPrefixAsync(string prefixKey, CancellationToken cancellationToken = default);
-}
-```
-**IDateTimeProvider.cs**
-```csharp
-namespace Application.Abstractions;
-
-public interface IDateTimeProvider
-{
-    DateTime UtcNow {get;}
-}
-```
-
-**IEventBus.cs**
-```csharp
-namespace Application.Abstractions;
-
-public interface IEventBus
-{
-    Task PublishAsync<T>(T message, CancellationToken cancellationtoken = default);
-}
-```
-
-**IJwtTokenGenerator.cs**
-```csharp
-namespace Application.Abstractions;
-
-public interface IJwtTokenGenerator
-{
-    string GenerateToken(string user_id,string first_name,string second_name);
-}
-```
-
-
-**UserDTO.cs**
-```csharp
-using System;
-using System.ComponentModel.DataAnnotations;
-
-namespace Application.Users.DTO;
-
-public record UserDTO(
-    string Id,
-    string FirstName,
-    string SecondName,
-    DateTime Birthdate,
-    string Biography,
-    string City
-);
-```
-
-**TokenDTO.cs**
-```csharp
-using System;
-using System.ComponentModel.DataAnnotations;
-
-namespace Application.Users.DTO;
-
-public class TokenDTO
-{
-    public string Value { get; set; }
-}
-```
-
-**GetUserQuery.cs**
-```csharp
-using Application.Users.DTO;
-using Domain.Entities;
-using MediatR;
-
-namespace Application.Users.Queries.GetUser;
-
-public record GetUserQuery(string Id) : IRequest<UserDTO>;
-```
-
-
-**GetUserQueryHandler.cs**
-```csharp
-using System.Collections.Generic;
-using System.Threading.Tasks;
-using Application.Users.Queries.GetUser;
-using Domain.Entities;
-using Domain.Interfaces;
-using AutoMapper;
-using MediatR;
-using Application.Users.DTO;
-
-namespace Application.Users.Queries.GetUser
-{
-    public class GetUserQueryHandler : IRequestHandler<GetUserQuery, UserDTO>
-    {
-        private readonly IUserRepository _userRepository;
-        private readonly IMapper _mapper;
-
-        public GetUserQueryHandler(IUserRepository userRepository, IMapper mapper)
-        {
-            _userRepository = userRepository;
-            _mapper = mapper;
-        }
-
-        public async Task<UserDTO> Handle(GetUserQuery request, CancellationToken cancellationToken)
-        {
-            User user = await _userRepository.GetUserByIdAsync(request.Id);
-            return _mapper.Map<UserDTO>(user);
-        }
-    }
-}
-```
-
-
-**SearchUsersQuery.cs**
-```csharp
-using Application.Users.DTO;
-using Domain.Entities;
-using MediatR;
-
-namespace Application.Users.Queries.SearchUsers;
-
-public record SearchUsersQuery(string first_name, string second_name) : IRequest<List<UserDTO>>;
-```
-
-**SearchUsersQueryHandler.cs**
-```csharp
-using System.Collections.Generic;
-using System.Threading.Tasks;
-using Application.Users.Queries.SearchUsers;
-using Domain.Entities;
-using AutoMapper;
-using MediatR;
-using Domain.Interfaces;
-using Application.Users.DTO;
-
-namespace Application.Users.Queries.SearchUsers
-{
-    public class SearchUsersQueryHandler : IRequestHandler<SearchUsersQuery, List<UserDTO>>
-    {
-        private readonly IUserRepository _userRepository;
-        private readonly IMapper _mapper;
-
-        public SearchUsersQueryHandler(IUserRepository userRepository, IMapper mapper)
-        {
-            _userRepository = userRepository;
-            _mapper = mapper;
-        }
-
-        public async Task<List<UserDTO>> Handle(SearchUsersQuery request, CancellationToken cancellationToken)
-        {
-            List<User> users = await _userRepository.SearchUsersAsync(request.first_name, request.second_name);
-            return _mapper.Map<List<UserDTO>>(users);
-        }
-    }
-}
-```
-
-**LoginQuery.cs**
-```csharp
-using Application.Users.DTO;
-using MediatR;
-
-namespace Application.Users.Queries.Login;
-
-public record LoginQuery(string Id, string Password) : IRequest<TokenDTO>;
-```
-
-**LoginQueryHandler.cs**
-```csharp
-using System;
-using System.Text;
-using System.Threading.Tasks;
-using System.Security.Cryptography;
-using System.Collections.Generic;
-using System.Threading;
-using Application.Users.DTO;
-using Application.Abstractions;
-using Domain.Entities;
-using Domain.Interfaces;
-using AutoMapper;
-using MediatR;
-using System.Security.Claims;
-
-namespace Application.Users.Queries.Login
-{
-    public class LoginQueryHandler : IRequestHandler<LoginQuery, TokenDTO>
-    {
-        private readonly IUserRepository _userRepository;
-        private readonly IJwtTokenGenerator _jwtTokenGenerator;
-        private readonly IMapper _mapper;
-
-        public LoginQueryHandler(
-            IUserRepository userRepository,
-            IJwtTokenGenerator jwtTokenGenerator,
-            IMapper mapper)
-        {
-            _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
-            _jwtTokenGenerator = jwtTokenGenerator ?? throw new ArgumentNullException(nameof(jwtTokenGenerator));
-            _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
-        }
-
-        public async Task<TokenDTO> Handle(LoginQuery request, CancellationToken cancellationToken)
-        {
-            User user = await _userRepository.GetUserByIdAsync(request.Id);
-
-            if (user == null || !VerifyPassword(request.Password, user.PasswordHash))
-            {
-                throw new UnauthorizedAccessException("Invalid user ID or password.");
-            }
-
-            TokenDTO token = new TokenDTO
-            {
-                Value = _jwtTokenGenerator.GenerateToken(user.Id, user.FirstName, user.SecondName),
-            };
-
-
-            return token;
-        }
-
-        private bool VerifyPassword(string password, string storedPasswordHash)
-        {
-            var parts = storedPasswordHash.Split(':');
-            if (parts.Length != 2) return false;
-
-            var salt = parts[0];
-            var hash = parts[1];
-
-            using (var sha256 = SHA256.Create())
-            {
-                var computedHash = sha256.ComputeHash(Encoding.UTF8.GetBytes(password + salt));
-                var computedHashString = BitConverter.ToString(computedHash).Replace("-", "").ToLower();
-
-                return hash == computedHashString;
-            }
-        }
-    }
-}
-```
-
-
-**ApplicationProfile.cs**
-```csharp
-using Application.Users.DTO;
-using Application.Users.Queries.GetUser;
-using Application.Users.Queries.SearchUsers;
-using AutoMapper;
-using Domain.Entities;
-
-namespace Application.Mapping
-{
-    public class ApplicationProfile : Profile
-    {
-        public ApplicationProfile()
-        {
-            CreateMap<User, UserDTO>();
-        }
-    }
-}
-```
-
-
-**Application/DependencyInjection.cs**
-```csharp
-using Domain.Interfaces;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Configuration;
-using AutoMapper;
-using Application.Mapping;
-
-namespace Application
-{
-    public static class DependencyInjection
-    {
-        public static IServiceCollection AddApplication(this IServiceCollection services)
-        {
-            services.AddAutoMapper(cfg => 
-            {
-                cfg.AddProfile<ApplicationProfile>();
-            }, typeof(DependencyInjection).Assembly);
-
-
-            services.AddMediatR(cfg => cfg.RegisterServicesFromAssemblies(AppDomain.CurrentDomain.GetAssemblies()));
-
-            return services;
-        }
-    }
-}
-```
 
 
 **appsettings.json**
@@ -1022,5 +1025,80 @@ namespace Api.Controllers
             return Ok(token);
         }
     }
+}
+```
+
+
+```dockerfile
+FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+WORKDIR /src
+COPY HighloadSocial.sln ./
+COPY Api/Api.csproj ./Api/
+COPY Application/Application.csproj ./Application/
+COPY Infrastructure/Infrastructure.csproj ./Infrastructure/
+COPY Domain/Domain.csproj ./Domain/
+RUN dotnet restore
+COPY . .
+RUN dotnet publish Api/Api.csproj -c Release -o /app/publish
+FROM mcr.microsoft.com/dotnet/aspnet:8.0
+WORKDIR /app
+COPY --from=build /app/publish .
+RUN apt-get update && \
+    apt-get install -y python3 python3-venv python3-pip && \
+    python3 -m venv /opt/venv && \
+    /opt/venv/bin/python -m pip install --upgrade pip && \
+    /opt/venv/bin/python -m pip install psycopg2-binary requests==2.31.0
+ENV VIRTUAL_ENV=/opt/venv
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+ARG UID=10001
+RUN adduser --disabled-password --gecos "" --home "/nonexistent" --shell "/sbin/nologin" --no-create-home --uid "${UID}" appuser
+USER appuser
+EXPOSE 80
+ENTRYPOINT ["dotnet", "Api.dll"]
+```
+
+
+**launchSettings.json**
+```json
+{
+  "$schema": "http://json.schemastore.org/launchsettings.json",
+  "iisSettings": {
+    "windowsAuthentication": false,
+    "anonymousAuthentication": true,
+    "iisExpress": {
+      "applicationUrl": "http://localhost:8080",
+      "sslPort": 44394
+    }
+  },
+  "profiles": {
+    "http": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": true,
+      "launchUrl": "swagger",
+      "applicationUrl": "http://localhost:8080",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Production"
+      }
+    },
+    "https": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": true,
+      "launchUrl": "swagger",
+      "applicationUrl": "https://localhost:7140;http://localhost:8080",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Production"
+      }
+    },
+    "IIS Express": {
+      "commandName": "IISExpress",
+      "launchBrowser": true,
+      "launchUrl": "swagger",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      }
+    }
+  }
 }
 ```
