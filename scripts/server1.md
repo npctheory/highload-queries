@@ -122,13 +122,16 @@ public class User
 **IUserRepository.cs**
 ```csharp
 using Domain.Entities;
+using System.Threading.Tasks;
 
-namespace Domain.Interfaces;
-
-public interface IUserRepository
+namespace Domain.Interfaces
 {
-    Task<User> GetUserByIdAsync(string userId);
-    Task<List<User>> SearchUsersAsync(string firstName, string lastName);
+    public interface IUserRepository
+    {
+        Task<User> GetUserByIdAsync(string userId);
+        Task<List<User>> SearchUsersAsync(string firstName, string lastName);
+        Task CreateUserAsync(User user); // Add this line
+    }
 }
 ```
 
@@ -259,6 +262,33 @@ namespace Infrastructure.Repositories
 
             return users;
         }
+
+        public async Task CreateUserAsync(User user)
+        {
+            if (user == null) throw new ArgumentNullException(nameof(user));
+
+            using (var connection = new NpgsqlConnection(_connectionString))
+            {
+                await connection.OpenAsync();
+
+                var query = @"
+                    INSERT INTO users (id, password_hash, first_name, second_name, birthdate, biography, city) 
+                    VALUES (@id, @passwordHash, @firstName, @secondName, @birthdate, @biography, @city)";
+
+                using (var command = new NpgsqlCommand(query, connection))
+                {
+                    command.Parameters.AddWithValue("id", user.Id);
+                    command.Parameters.AddWithValue("passwordHash", user.PasswordHash);
+                    command.Parameters.AddWithValue("firstName", user.FirstName);
+                    command.Parameters.AddWithValue("secondName", user.SecondName);
+                    command.Parameters.AddWithValue("birthdate", user.Birthdate);
+                    command.Parameters.AddWithValue("biography", (object)user.Biography ?? DBNull.Value);
+                    command.Parameters.AddWithValue("city", (object)user.City ?? DBNull.Value);
+
+                    await command.ExecuteNonQueryAsync();
+                }
+            }
+        }
     }
 }
 ```
@@ -328,6 +358,16 @@ public interface IJwtTokenGenerator
 }
 ```
 
+**IPasswordHasher.cs**
+```csharp
+namespace Application.Abstractions;
+
+public interface IPasswordHasher
+{
+    string HashPassword(string password);
+    bool VerifyPassword(string password, string hashedPassword);
+}
+```
 
 
 **UserDTO.cs**
@@ -532,6 +572,69 @@ namespace Application.Users.Queries.Login
 }
 ```
 
+**RegisterQuery.cs**
+```csharp
+using Application.Users.DTO;
+using MediatR;
+
+namespace Application.Users.Queries.Register;
+
+public record RegisterQuery(string FirstName, string SecondName, string Birthdate, string Biography, string City, string Password) : IRequest<UserDTO>;
+```
+
+**RegisterQueryHandler.cs**
+```csharp
+using System;
+using System.Threading;
+using System.Threading.Tasks;
+using Application.Users.DTO;
+using Application.Abstractions;
+using Domain.Entities;
+using Domain.Interfaces;
+using AutoMapper;
+using MediatR;
+
+namespace Application.Users.Queries.Register
+{
+    public class RegisterQueryHandler : IRequestHandler<RegisterQuery, UserDTO>
+    {
+        private readonly IUserRepository _userRepository;
+        private readonly IJwtTokenGenerator _jwtTokenGenerator;
+        private readonly IMapper _mapper;
+        private readonly IPasswordHasher _passwordHasher;
+
+        public RegisterQueryHandler(
+            IUserRepository userRepository,
+            IJwtTokenGenerator jwtTokenGenerator,
+            IMapper mapper,
+            IPasswordHasher passwordHasher)
+        {
+            _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
+            _jwtTokenGenerator = jwtTokenGenerator ?? throw new ArgumentNullException(nameof(jwtTokenGenerator));
+            _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
+            _passwordHasher = passwordHasher ?? throw new ArgumentNullException(nameof(passwordHasher));
+        }
+
+        public async Task<UserDTO> Handle(RegisterQuery request, CancellationToken cancellationToken)
+        {
+            var user = new User
+            {
+                Id = Guid.NewGuid().ToString(),
+                FirstName = request.FirstName,
+                SecondName = request.SecondName,
+                Birthdate = DateTime.Parse(request.Birthdate),
+                Biography = request.Biography,
+                City = request.City,
+                PasswordHash = _passwordHasher.HashPassword(request.Password)
+            };
+
+            await _userRepository.CreateUserAsync(user);
+
+            return _mapper.Map<UserDTO>(user);
+        }
+    }
+}
+```
 
 **ApplicationProfile.cs**
 ```csharp
@@ -755,6 +858,62 @@ namespace Application.Services
 }
 ```
 
+**PasswordHasher.cs**
+```csharp
+using System.Security.Cryptography;
+using System.Text;
+using Application.Abstractions;
+
+namespace Infrastructure.Services;
+
+public class PasswordHasher : IPasswordHasher
+{
+    private const int SaltSize = 16; // 16 bytes = 128 bits
+
+    public string HashPassword(string password)
+    {
+        var salt = GenerateSalt();
+        var hash = ComputeHash(password, salt);
+        return $"{salt}:{hash}";
+    }
+
+    public bool VerifyPassword(string password, string hashedPassword)
+    {
+        var parts = hashedPassword.Split(':');
+        if (parts.Length != 2)
+        {
+            throw new FormatException("The hashed password format is invalid.");
+        }
+
+        var salt = parts[0];
+        var hash = parts[1];
+
+        var computedHash = ComputeHash(password, salt);
+        return hash.Equals(computedHash, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private string GenerateSalt()
+    {
+        using (var rng = RandomNumberGenerator.Create())
+        {
+            var saltBytes = new byte[SaltSize];
+            rng.GetBytes(saltBytes);
+            return BitConverter.ToString(saltBytes).Replace("-", "").ToLower();
+        }
+    }
+
+    private string ComputeHash(string password, string salt)
+    {
+        using (var sha256 = SHA256.Create())
+        {
+            var passwordWithSaltBytes = Encoding.UTF8.GetBytes(password + salt);
+            var hashBytes = sha256.ComputeHash(passwordWithSaltBytes);
+            return BitConverter.ToString(hashBytes).Replace("-", "").ToLower();
+        }
+    }
+}
+```
+
 **Infrastructure/DependencyInjection.cs**
 ```csharp
 using Domain.Interfaces;
@@ -781,6 +940,7 @@ namespace Infrastructure
         {
             services.AddSingleton<IDateTimeProvider,DateTimeProvider>();
             services.AddSingleton<IJwtTokenGenerator,JwtTokenGenerator>();
+            services.AddSingleton<IPasswordHasher,PasswordHasher>();
 
 
             services.AddAutoMapper(cfg => 
@@ -983,6 +1143,7 @@ using System.Threading.Tasks;
 using Application.Users.DTO;
 using System.Text.Json;
 using Application.Users.Queries.Login;
+using Application.Users.Queries.Register;
 
 namespace Api.Controllers
 {
@@ -1023,6 +1184,21 @@ namespace Api.Controllers
 
             TokenDTO token = await _mediator.Send(new LoginQuery(id,password)); 
             return Ok(token);
+        }
+
+        [AllowAnonymous]
+        [HttpPost("register")]
+        public async Task<IActionResult> Register([FromBody] JsonElement jsonElement)
+        {
+            string first_name = jsonElement.GetProperty("first_name").GetString();
+            string second_name = jsonElement.GetProperty("second_name").GetString();
+            string birthdate = jsonElement.GetProperty("birthdate").GetString();
+            string biography = jsonElement.GetProperty("biography").GetString();
+            string city = jsonElement.GetProperty("city").GetString();
+            string password = jsonElement.GetProperty("password").GetString();
+
+            UserDTO user = await _mediator.Send(new RegisterQuery(first_name,second_name,birthdate,biography,city,password)); 
+            return Ok(user);
         }
     }
 }

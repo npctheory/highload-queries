@@ -22,6 +22,7 @@ namespace Infrastructure
         {
             services.AddSingleton<IDateTimeProvider,DateTimeProvider>();
             services.AddSingleton<IJwtTokenGenerator,JwtTokenGenerator>();
+            services.AddSingleton<IPasswordHasher,PasswordHasher>();
 
 
             services.AddAutoMapper(cfg => 

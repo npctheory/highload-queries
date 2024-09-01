@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using Application.Users.DTO;
 using System.Text.Json;
 using Application.Users.Queries.Login;
+using Application.Users.Queries.Register;
 
 namespace Api.Controllers
 {
@@ -50,6 +51,21 @@ namespace Api.Controllers
 
             TokenDTO token = await _mediator.Send(new LoginQuery(id,password)); 
             return Ok(token);
+        }
+
+        [AllowAnonymous]
+        [HttpPost("register")]
+        public async Task<IActionResult> Register([FromBody] JsonElement jsonElement)
+        {
+            string first_name = jsonElement.GetProperty("first_name").GetString();
+            string second_name = jsonElement.GetProperty("second_name").GetString();
+            string birthdate = jsonElement.GetProperty("birthdate").GetString();
+            string biography = jsonElement.GetProperty("biography").GetString();
+            string city = jsonElement.GetProperty("city").GetString();
+            string password = jsonElement.GetProperty("password").GetString();
+
+            UserDTO user = await _mediator.Send(new RegisterQuery(first_name,second_name,birthdate,biography,city,password)); 
+            return Ok(user);
         }
     }
 }

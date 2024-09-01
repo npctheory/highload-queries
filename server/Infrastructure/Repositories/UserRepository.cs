@@ -99,5 +99,32 @@ namespace Infrastructure.Repositories
 
             return users;
         }
+
+        public async Task CreateUserAsync(User user)
+        {
+            if (user == null) throw new ArgumentNullException(nameof(user));
+
+            using (var connection = new NpgsqlConnection(_connectionString))
+            {
+                await connection.OpenAsync();
+
+                var query = @"
+                    INSERT INTO users (id, password_hash, first_name, second_name, birthdate, biography, city) 
+                    VALUES (@id, @passwordHash, @firstName, @secondName, @birthdate, @biography, @city)";
+
+                using (var command = new NpgsqlCommand(query, connection))
+                {
+                    command.Parameters.AddWithValue("id", user.Id);
+                    command.Parameters.AddWithValue("passwordHash", user.PasswordHash);
+                    command.Parameters.AddWithValue("firstName", user.FirstName);
+                    command.Parameters.AddWithValue("secondName", user.SecondName);
+                    command.Parameters.AddWithValue("birthdate", user.Birthdate);
+                    command.Parameters.AddWithValue("biography", (object)user.Biography ?? DBNull.Value);
+                    command.Parameters.AddWithValue("city", (object)user.City ?? DBNull.Value);
+
+                    await command.ExecuteNonQueryAsync();
+                }
+            }
+        }
     }
 }
