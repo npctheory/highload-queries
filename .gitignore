@@ -19,13 +19,6 @@ volumes/pg_asyncslave/*
 client/obj/
 client/bin/
 
-# Spring Boot
-server/target/
-server/Api/obj/
-server/Api/bin/
-server/Application/obj/
-server/Application/bin/
-server/Infrastructure/obj/
-server/Infrastructure/bin/
-server/Domain/obj/
-server/Domain/bin/
+# .NET
+**/bin/
+**/obj/
