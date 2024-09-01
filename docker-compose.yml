@@ -58,7 +58,7 @@ services:
   server:
     build:
       context: ./server
-      dockerfile: ./Api/Dockerfile
+      dockerfile: ./Core.Api/Dockerfile
     image: server:local
     container_name: server
     restart: unless-stopped

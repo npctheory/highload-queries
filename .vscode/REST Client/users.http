@@ -13,7 +13,7 @@ POST http://{{host}}/login
 Content-Type: application/json
 
 {
-  "id": "EnterShow9372",
+  "id": "b8633d30-8df4-4ffb-bb64-31b89568f15c",
   "password": "password"
 }
 
