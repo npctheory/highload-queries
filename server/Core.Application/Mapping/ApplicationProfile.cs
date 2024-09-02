@@ -3,6 +3,7 @@ using Core.Application.Users.Queries.GetUser;
 using Core.Application.Users.Queries.SearchUsers;
 using AutoMapper;
 using Core.Domain.Entities;
+using Core.Application.Friends.DTO;
 
 namespace Core.Application.Mapping
 {
@@ -11,6 +12,7 @@ namespace Core.Application.Mapping
         public ApplicationProfile()
         {
             CreateMap<User, UserDTO>();
+            CreateMap<Friendship, FriendDTO>();
         }
     }
 }

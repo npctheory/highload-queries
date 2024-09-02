@@ -9,6 +9,7 @@ namespace Core.Infrastructure.Mapping
         public InfrastructureProfile()
         {
             CreateMap<UserSnapshot, User>();
+            CreateMap<FriendshipSnapshot, Friendship>();
         }
     }
 }

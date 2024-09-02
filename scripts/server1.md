@@ -194,14 +194,22 @@ public interface IDateTimeProvider
 ```csharp
 using Core.Application.Abstractions;
 using EventBus;
+using MassTransit;
 
 namespace Core.Infrastructure.Services;
 
 public class RabbitMQEventBus : IEventBus
 {
-    public Task PublishAsync<T>(T message, CancellationToken cancellationtoken = default)
+    private readonly IPublishEndpoint _publishEndpoint;
+
+    public RabbitMQEventBus(IPublishEndpoint publishEndpoint)
     {
-        throw new NotImplementedException();
+        _publishEndpoint = publishEndpoint;
+    }
+
+    public async Task PublishAsync<T>(T message, CancellationToken cancellationToken = default) where T : class
+    {
+        await _publishEndpoint.Publish(message, cancellationToken);
     }
 }
 ```
@@ -224,6 +232,15 @@ public interface IPasswordHasher
 {
     string HashPassword(string password);
     bool VerifyPassword(string password, string hashedPassword);
+}
+```
+**IEventBus.cs**
+```csharp
+namespace EventBus;
+
+public interface IEventBus
+{
+    Task PublishAsync<T>(T message, CancellationToken cancellationToken = default) where T : class;
 }
 ```
 
@@ -1277,14 +1294,5 @@ ENTRYPOINT ["dotnet", "Core.Api.dll"]
       }
     }
   }
-}
-```
-
-```csharp
-namespace EventBus;
-
-public interface IEventBus
-{
-    Task PublishAsync<T>(T message, CancellationToken cancellationToken = default) where T : class;
 }
 ```

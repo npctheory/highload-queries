@@ -1,12 +1,13 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
-using Application.DAO;
+using Core.Domain.Entities;
 
 namespace Core.Domain.Interfaces;
 
 public interface IFriendshipRepository
 {
-    Task AddAsync(string userId, string friendId);
-    Task DeleteAsync(string userId, string friendId);
-    Task<List<FriendDAO>> ListAsync(string userId);
+    Task AddFriendship(string userId, string friendId);
+    Task DeleteFriendship(string userId, string friendId);
+    Task<List<Friendship>> ListFriendships(string userId);
 }
+

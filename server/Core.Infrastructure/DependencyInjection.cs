@@ -13,6 +13,7 @@ using Microsoft.Extensions.Configuration;
 using Core.Infrastructure.Generators;
 using System.Text;
 using Core.Infrastructure.Providers;
+using EventBus;
 
 namespace Core.Infrastructure
 {
@@ -49,9 +50,18 @@ namespace Core.Infrastructure
                 return new UserRepository(connectionString, mapper);
             });
 
+            services.AddScoped<IFriendshipRepository>(sp =>
+            {
+                var connectionString = configuration.GetSection("DatabaseSettings:ConnectionString").Value;
+                var mapper = sp.GetRequiredService<IMapper>();
+                return new FriendshipRepository(connectionString, mapper);
+            });
+
 
             services.AddMassTransit(busConfigurator =>
             {
+                busConfigurator.SetKebabCaseEndpointNameFormatter();
+
                 busConfigurator.UsingRabbitMq((context, rabbitMqConfigurator) =>
                 {
                     var rabbitMqSettings = configuration.GetSection("RabbitMqSettings");
@@ -68,7 +78,7 @@ namespace Core.Infrastructure
                     });
                 });
             });
-            services.AddTransient<IEventBus,EventBus>();
+            services.AddTransient<IEventBus,RabbitMQEventBus>();
 
             return services;
         }
