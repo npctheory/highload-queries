@@ -6,22 +6,26 @@ dotnet new webapi -o server/Core.Api
 dotnet new classlib -o server/Core.Application
 dotnet new classlib -o server/Core.Infrastructure
 dotnet new classlib -o server/Core.Domain
+dotnet new classlib -o server/EventBus
 
 dotnet sln server/HighloadSocial.sln add server/Core.Api/
 dotnet sln server/HighloadSocial.sln add server/Core.Application/
 dotnet sln server/HighloadSocial.sln add server/Core.Infrastructure/
 dotnet sln server/HighloadSocial.sln add server/Core.Domain/
+dotnet sln server/HighloadSocial.sln add server/EventBus/
 
-dotnet add server/Core.Application/Core.Application.csproj reference server/Core.Domain/Core.Domain.csproj
-dotnet add server/Core.Infrastructure/Core.Infrastructure.csproj reference server/Core.Domain/Core.Domain.csproj server/Core.Application/
+dotnet add server/Core.Application/Core.Application.csproj reference server/Core.Domain/Core.Domain.csproj server/EventBus/EventBus.csproj
+dotnet add server/Core.Infrastructure/Core.Infrastructure.csproj reference server/Core.Domain/Core.Domain.csproj server/Core.Application/ server/EventBus/EventBus.csproj
 dotnet add server/Core.Api/Core.Api.csproj reference server/Core.Application/Core.Application.csproj server/Core.Infrastructure/Core.Infrastructure.csproj
 
 rm server/Core.Api/Core.Api.http
 rm server/Core.Application/Class1.cs
 rm server/Core.Infrastructure/Class1.cs
 rm server/Core.Domain/Class1.cs
+rm server/EventBus/Class1.cs
 
-mkdir -p server/Core.Api/Controllers
+mkdir -p server/Core.Domain/Entities
+mkdir -p server/Core.Domain/Interfaces
 mkdir -p server/Core.Application/Users/Queries/GetUser
 mkdir -p server/Core.Application/Users/Queries/SearchUsers
 mkdir -p server/Core.Application/Users/Queries/Login
@@ -36,8 +40,8 @@ mkdir -p server/Core.Infrastructure/Repositories
 mkdir -p server/Core.Infrastructure/Services
 mkdir -p server/Core.Infrastructure/Generators
 mkdir -p server/Core.Infrastructure/Providers
-mkdir -p server/Core.Domain/Entities
-mkdir -p server/Core.Domain/Interfaces
+mkdir -p server/Core.Api/Controllers
+mkdir -p server/EventBus/Events
 
 
 touch server/Core.Api/DependencyInjection.cs
@@ -48,17 +52,17 @@ touch server/Core.Infrastructure/Snapshots/UserSnapshot.cs
 
 touch server/Core.Application/Abstractions/ICacheService.cs
 touch server/Core.Application/Abstractions/IDateTimeProvider.cs
-touch server/Core.Application/Abstractions/IEventBus.cs
 touch server/Core.Application/Abstractions/IJwtTokenGenerator.cs
 touch server/Core.Application/Abstractions/IPasswordHasher.cs
 
 touch server/Core.Infrastructure/Configuration/JwtSettings.cs
 touch server/Core.Infrastructure/Services/RedisCacheService.cs
-touch server/Core.Infrastructure/Services/EventBus.cs
+touch server/Core.Infrastructure/Services/RabbitMQEventBus.cs
 touch server/Core.Infrastructure/Services/PasswordHasher.cs
 touch server/Core.Infrastructure/Providers/DateTimeProvider.cs
 touch server/Core.Infrastructure/Generators/JwtTokenGenerator.cs
 
+touch server/EventBus/IEventBus.cs
 
 
 touch server/Core.Domain/Interfaces/IUserRepository.cs
@@ -94,7 +98,6 @@ dotnet add server/Core.Infrastructure/ package AutoMapper
 dotnet add server/Core.Infrastructure/ package Bogus
 dotnet add server/Core.Infrastructure/ package Npgsql
 dotnet add server/Core.Infrastructure/ package StackExchange.Redis
-dotnet add server/Core.Infrastructure/ package MassTransit
 dotnet add server/Core.Infrastructure/ package MassTransit.RabbitMQ
 ```
 
@@ -187,13 +190,19 @@ public interface IDateTimeProvider
 }
 ```
 
-**IEventBus.cs**
+**RabbitMQEventBus.cs**
 ```csharp
-namespace Core.Application.Abstractions;
+using Core.Application.Abstractions;
+using EventBus;
 
-public interface IEventBus
+namespace Core.Infrastructure.Services;
+
+public class RabbitMQEventBus : IEventBus
 {
-    Task PublishAsync<T>(T message, CancellationToken cancellationtoken = default);
+    public Task PublishAsync<T>(T message, CancellationToken cancellationtoken = default)
+    {
+        throw new NotImplementedException();
+    }
 }
 ```
 
