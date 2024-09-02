@@ -780,20 +780,6 @@ public class DateTimeProvider : IDateTimeProvider
 ```
 
 
-**EventBus.cs**
-```csharp
-using Core.Application.Abstractions;
-
-namespace Core.Infrastructure.Services;
-
-public class EventBus : IEventBus
-{
-    public Task PublishAsync<T>(T message, CancellationToken cancellationtoken = default)
-    {
-        throw new NotImplementedException();
-    }
-}
-```
 
 **RedisCacheService.cs**
 ```csharp
@@ -1291,5 +1277,14 @@ ENTRYPOINT ["dotnet", "Core.Api.dll"]
       }
     }
   }
+}
+```
+
+```csharp
+namespace EventBus;
+
+public interface IEventBus
+{
+    Task PublishAsync<T>(T message, CancellationToken cancellationToken = default) where T : class;
 }
 ```
