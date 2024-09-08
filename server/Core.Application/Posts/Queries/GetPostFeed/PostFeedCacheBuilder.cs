@@ -52,7 +52,11 @@ public class PostFeedCacheBuilder :
 
     private async Task BuildFriendsPostsCacheForUser(string userId)
     {
+        string prefix = $"FriendsPosts:{userId}:";
         string cacheKeyForFirst1000 = $"FriendsPosts:{userId}:0:1000";
+
+        await _cacheService.RemoveByPrefixAsync(prefix);
+
         List<Friendship> friendships = await _friendshipRepository.ListFriendships(userId);
 
         List<string> friendsIds = friendships.Select(f => f.FriendId).ToList();

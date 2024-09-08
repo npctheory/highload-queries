@@ -57,10 +57,13 @@ public class FriendsPostFeedCacheRebuilder :
         foreach (var friendship in users)
         {
             string cacheKeyForFirst1000 = $"FriendsPosts:{friendship.UserId}:0:1000";
+            string prefix = $"FriendsPosts:{friendship.UserId}:";
 
             var cachedPosts = await _cacheService.GetAsync<List<Post>>(cacheKeyForFirst1000);
             if (cachedPosts != null && cachedPosts.Count > 0)
             {
+                await _cacheService.RemoveByPrefixAsync(prefix);
+
                 List<Friendship> friends = await _friendshipRepository.ListFriendships(friendship.UserId);
                 List<string> friendIds = friends.Select(f => f.FriendId).ToList();
 

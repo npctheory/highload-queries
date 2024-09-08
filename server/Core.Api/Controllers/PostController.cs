@@ -11,7 +11,7 @@ using Core.Application.Posts.DTO;
 using Core.Application.Posts.Commands.UpdatePost;
 using Core.Application.Posts.Commands.CreatePost;
 
-namespace Api.Controllers
+namespace Core.Api.Controllers
 {
     [ApiController]
     public class PostController : ControllerBase

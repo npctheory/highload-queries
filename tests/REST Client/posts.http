@@ -1,12 +1,12 @@
-@host=localhost:80
-@token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJFbnRlclNob3c5MzcyIiwiZ2l2ZW5fbmFtZSI6IldpbGxpYW0iLCJmYW1pbHlfbmFtZSI6IldhdHNvbiIsImp0aSI6ImYzYzM1ZjExLWRhMWItNDRkOS05ZTVmLWRlNGQzNTc4ZmZhMyIsImV4cCI6MTcyOTA0NzYwNiwiaXNzIjoiSGlnaGxvYWRTb2NpYWwiLCJhdWQiOiJIaWdobG9hZFNvY2lhbCJ9.JdThIhc8AK6bI5gAdo3Om3sLqhBCjRRzotQLF1qF7vM
+@host=localhost:8080
+@token=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJMYWR5R2FnYSIsImdpdmVuX25hbWUiOiJMYWR5IiwiZmFtaWx5X25hbWUiOiJHYWdhIiwianRpIjoiODIwOTRhNTktOTczNS00NzAzLWE0NTYtYjUzYzMwOTZkZDA2IiwiZXhwIjoyMDQxMTk1OTgxLCJpc3MiOiJIaWdobG9hZFNvY2lhbCIsImF1ZCI6IkhpZ2hsb2FkU29jaWFsIn0.3TVvta8d-pXCz9_AFRB-Anp9Sx0a5hBFXYxyrVtFIIQ
 
 ### Login
 POST http://{{host}}/login
 Content-Type: application/json
 
 {
-  "id": "JobFrom3784",
+  "id": "LadyGaga",
   "password": "password"
 }
 
@@ -26,6 +26,15 @@ Content-Type: application/json
 Authorization: Bearer {{token}}
 
 ### Delete
-GET http://{{host}}/post/delete/9016bd4f-8d79-4f22-8466-8f4e0ca87a31
+PUT http://{{host}}/post/delete/
 Content-Type: application/json
 Authorization: Bearer {{token}}
+
+### Create
+POST http://{{host}}/post/create
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "text": "Lorem Ipsum"
+}
