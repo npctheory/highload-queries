@@ -5,7 +5,7 @@
 * Dockerfile и сид базы данных Postgres в папке ./db, которые собираются в образ db:local. Библиотекой Faker сгенерированы пользователи, френды, посты.
 * В папке tests находятся запросы для расширения VSCode REST Client и экспорты коллекций и окружений Postman.
 ## Начало работы
-Склонировать проект, сделать cd в корень репозитория и запустить через Docker Compose.  
+Склонировать проект, сделать cd в корень репозитория и запустить Docker Compose.  
 ```bash
 https://github.com/npctheory/highload-queries.git
 cd highload-queries
