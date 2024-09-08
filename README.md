@@ -38,6 +38,9 @@ TTL ленты: 5 минут.
 [Clear Post Feed Cache For Friends.webm](https://github.com/user-attachments/assets/3f258b86-b5c6-4514-a89c-193bdcb94517)
 
 
-## WebSocket сервер  
+## WebSocket-Сервер  
 На эндпоинте /post/feed/posted реализован SignalR-хаб PostHub, который отправляет подключенным пользователям события PostCreatedEvent, PostUpdatedEvent, PostDeletedEvent. Как и во всех контроллерах в хабе используется JWT-авторизация. Из клеймов извлекается идентификатор пользователя, для идентификатора из базы извлекается список друзей и на каждого друга создаются группа SignalR, в которые добавляется активное соединение. При возникновении событий изменения ленты постов - рассылка событий производится по группам SignalR.  
-Пример на видео:   
+На видео пользователь User подключается к SignalR-хабу, а пользователь LadyGaga создает и удаляет новые посты:  
+
+
+[SignalR Websockets.webm](https://github.com/user-attachments/assets/d655d6ee-8a30-4a38-bdad-910d39c17692)
