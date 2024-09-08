@@ -11,7 +11,7 @@ https://github.com/npctheory/highload-queries.git
 cd highload-queries
 docker compose up --build -d
 ```
-## CRUDL методы контроллера постов 
+## CRUDL-методы контроллера постов 
 При запуске Docker Compose и сборке образа db:local, в контейнер базы из папка db/initdb будет скопирован сид данных с заранее сгенерированными данными: 5000 пользователей (таблица Users). На каждого из пользователей заданы 200 случайных друзей (таблица Friendships). На каждого пользователя созданы 50 постов (таблица Posts). В сиде есть пользователь с id "LadyGaga", на которого подписаны все 5000 пользователей.  
 В контроллере Core.Api.Controllers.PostController реализованы CRUDL REST-эндпоинты (post/create, post/get/{id}, post/update, post/delete/{post_id}, post/list) для работы с постами, эндпоинт post/feed для получения ленты постов друзей.  
 Пример работы эндпоинтов PostController на видео:  
