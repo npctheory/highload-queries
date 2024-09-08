@@ -1,6 +1,11 @@
 using System.Text;
+using Core.Api.EventConsumers;
 using Core.Infrastructure.Configuration;
+using Core.Infrastructure.Services;
+using EventBus;
+using MassTransit;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.IdentityModel.Tokens;
 
 namespace Core.Api
@@ -34,6 +39,35 @@ namespace Core.Api
                     IssuerSigningKey = new SymmetricSecurityKey(key)
                 };
             });
+
+            services.AddMassTransit(busConfigurator =>
+            {
+                busConfigurator.SetKebabCaseEndpointNameFormatter();
+                busConfigurator.AddConsumer<UserEventConsumer>();
+                busConfigurator.AddConsumer<FriendEventConsumer>();
+                busConfigurator.AddConsumer<PostEventConsumer>();
+
+                busConfigurator.UsingRabbitMq((context, rabbitMqConfigurator) =>
+                {
+                    var rabbitMqSettings = configuration.GetSection("RabbitMqSettings");
+
+                    rabbitMqConfigurator.Host(rabbitMqSettings["HostName"], "/", h =>
+                    {
+                        h.Username(rabbitMqSettings["UserName"]);
+                        h.Password(rabbitMqSettings["Password"]);
+                    });
+
+                rabbitMqConfigurator.ReceiveEndpoint("core_queue", endpointConfigurator =>
+                    {
+                    endpointConfigurator.ConfigureConsumer<UserEventConsumer>(context);
+                    endpointConfigurator.ConfigureConsumer<FriendEventConsumer>(context);
+                    endpointConfigurator.ConfigureConsumer<PostEventConsumer>(context);
+                    });
+                });
+            });
+            services.AddTransient<IEventBus,RabbitMQEventBus>();
+
+            services.AddSignalR();
 
             return services;
         }

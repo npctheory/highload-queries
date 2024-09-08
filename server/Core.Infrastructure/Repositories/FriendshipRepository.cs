@@ -79,4 +79,32 @@ public class FriendshipRepository : IFriendshipRepository
 
         return friendships;
     }
+
+    public async Task<List<Friendship>> ListUsersWithFriend(string friendId)
+    {
+        var friendships = new List<Friendship>();
+
+        using (var connection = new NpgsqlConnection(_connectionString))
+        {
+            await connection.OpenAsync();
+            using (var command = new NpgsqlCommand("SELECT user_id FROM friendships WHERE friend_id = @FriendId", connection))
+            {
+                command.Parameters.AddWithValue("@FriendId", friendId);
+
+                using (var reader = await command.ExecuteReaderAsync())
+                {
+                    while (await reader.ReadAsync())
+                    {
+                        friendships.Add(new Friendship
+                        {
+                            UserId = reader.GetString(0),
+                            FriendId = friendId
+                        });
+                    }
+                }
+            }
+        }
+
+        return friendships;
+    }
 }

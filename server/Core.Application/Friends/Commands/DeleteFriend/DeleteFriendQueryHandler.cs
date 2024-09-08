@@ -27,7 +27,7 @@ namespace Core.Application.Friends.Commands.DeleteFriend
         public async Task<bool> Handle(DeleteFriendQuery request, CancellationToken cancellationToken)
         {
             await _friendshipRepository.DeleteFriendship(request.UserId, request.FriendId);
-            var friendDeleteEvent = new FriendDeleteEvent(request.UserId,request.FriendId);
+            var friendDeleteEvent = new FriendDeletedEvent(request.UserId,request.FriendId);
             await _eventBus.PublishAsync(friendDeleteEvent, cancellationToken);
             return true;
         }

@@ -10,6 +10,7 @@ namespace Core.Infrastructure.Mapping
         {
             CreateMap<UserSnapshot, User>();
             CreateMap<FriendshipSnapshot, Friendship>();
+            CreateMap<PostSnapshot, Post>();
         }
     }
 }

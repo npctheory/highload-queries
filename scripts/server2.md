@@ -27,6 +27,46 @@ touch server/Core.Infrastructure/Repositories/FriendshipRepository.cs
 touch server/Core.Api/Controllers/FriendController.cs
 ```
 
+**FriendAddedEvent.cs**
+```csharp
+using MediatR;
+
+namespace EventBus.Events;
+
+public class FriendAddedEvent : INotification
+{
+    public string UserId { get; set; }
+    public string FriendId { get; set; }
+
+
+    public FriendAddedEvent(string userId, string friendId)
+    {
+        UserId = userId;
+        FriendId = friendId;
+    }
+}
+```
+
+**FriendDeletedEvent.cs**
+```csharp
+using MediatR;
+
+namespace EventBus.Events;
+
+public class FriendDeletedEvent : INotification
+{
+    public string UserId { get; set; }
+    public string FriendId { get; set; }
+
+
+    public FriendDeletedEvent(string userId, string friendId)
+    {
+        UserId = userId;
+        FriendId = friendId;
+    }
+}
+```
+
 **Friendship.cs**
 ```csharp
 using System.ComponentModel.DataAnnotations;
@@ -53,6 +93,7 @@ public interface IFriendshipRepository
     Task AddFriendship(string userId, string friendId);
     Task DeleteFriendship(string userId, string friendId);
     Task<List<Friendship>> ListFriendships(string userId);
+    Task<List<Friendship>> ListUsersWithFriend(string friendId);
 }
 ```
 
@@ -172,7 +213,7 @@ public class AddFriendQueryHandler : IRequestHandler<AddFriendQuery, bool>
     public async Task<bool> Handle(AddFriendQuery request, CancellationToken cancellationToken)
     {
         await _friendshipRepository.AddFriendship(request.UserId, request.FriendId);
-        var friendAddEvent = new FriendAddEvent(request.UserId,request.FriendId);
+        var friendAddEvent = new FriendAddedEvent(request.UserId,request.FriendId);
         await _eventBus.PublishAsync(friendAddEvent, cancellationToken);
         return true;
     }
@@ -219,7 +260,7 @@ namespace Core.Application.Friends.Commands.DeleteFriend
         public async Task<bool> Handle(DeleteFriendQuery request, CancellationToken cancellationToken)
         {
             await _friendshipRepository.DeleteFriendship(request.UserId, request.FriendId);
-            var friendDeleteEvent = new FriendDeleteEvent(request.UserId,request.FriendId);
+            var friendDeleteEvent = new FriendDeletedEvent(request.UserId,request.FriendId);
             await _eventBus.PublishAsync(friendDeleteEvent, cancellationToken);
             return true;
         }
@@ -371,6 +412,34 @@ public class FriendshipRepository : IFriendshipRepository
                         };
 
                         friendships.Add(_mapper.Map<Friendship>(friendshipSnapshot));
+                    }
+                }
+            }
+        }
+
+        return friendships;
+    }
+
+    public async Task<List<Friendship>> ListUsersWithFriend(string friendId)
+    {
+        var friendships = new List<Friendship>();
+
+        using (var connection = new NpgsqlConnection(_connectionString))
+        {
+            await connection.OpenAsync();
+            using (var command = new NpgsqlCommand("SELECT user_id FROM friendships WHERE friend_id = @FriendId", connection))
+            {
+                command.Parameters.AddWithValue("@FriendId", friendId);
+
+                using (var reader = await command.ExecuteReaderAsync())
+                {
+                    while (await reader.ReadAsync())
+                    {
+                        friendships.Add(new Friendship
+                        {
+                            UserId = reader.GetString(0),
+                            FriendId = friendId
+                        });
                     }
                 }
             }

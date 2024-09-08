@@ -11,6 +11,8 @@ using Core.Domain.Interfaces;
 using AutoMapper;
 using MediatR;
 using System.Security.Claims;
+using EventBus.Events;
+using EventBus;
 
 namespace Core.Application.Users.Queries.Login
 {
@@ -19,15 +21,18 @@ namespace Core.Application.Users.Queries.Login
         private readonly IUserRepository _userRepository;
         private readonly IJwtTokenGenerator _jwtTokenGenerator;
         private readonly IMapper _mapper;
+        private readonly IEventBus _eventBus;
 
         public LoginQueryHandler(
             IUserRepository userRepository,
             IJwtTokenGenerator jwtTokenGenerator,
-            IMapper mapper)
+            IMapper mapper,
+            IEventBus eventBus)
         {
             _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
             _jwtTokenGenerator = jwtTokenGenerator ?? throw new ArgumentNullException(nameof(jwtTokenGenerator));
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
+            _eventBus = eventBus;
         }
 
         public async Task<TokenDTO> Handle(LoginQuery request, CancellationToken cancellationToken)
@@ -41,9 +46,11 @@ namespace Core.Application.Users.Queries.Login
 
             TokenDTO token = new TokenDTO
             {
-                Value = _jwtTokenGenerator.GenerateToken(user.Id, user.FirstName, user.SecondName),
+                token = _jwtTokenGenerator.GenerateToken(user.Id, user.FirstName, user.SecondName),
             };
 
+            var userLoggedInEvent = new UserLoggedInEvent(request.Id);
+            await _eventBus.PublishAsync(userLoggedInEvent, cancellationToken);
 
             return token;
         }

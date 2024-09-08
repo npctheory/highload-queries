@@ -28,7 +28,7 @@ public class AddFriendQueryHandler : IRequestHandler<AddFriendQuery, bool>
     public async Task<bool> Handle(AddFriendQuery request, CancellationToken cancellationToken)
     {
         await _friendshipRepository.AddFriendship(request.UserId, request.FriendId);
-        var friendAddEvent = new FriendAddEvent(request.UserId,request.FriendId);
+        var friendAddEvent = new FriendAddedEvent(request.UserId,request.FriendId);
         await _eventBus.PublishAsync(friendAddEvent, cancellationToken);
         return true;
     }

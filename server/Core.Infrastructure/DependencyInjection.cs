@@ -14,6 +14,8 @@ using Core.Infrastructure.Generators;
 using System.Text;
 using Core.Infrastructure.Providers;
 using EventBus;
+using EventBus.Events;
+
 
 namespace Core.Infrastructure
 {
@@ -57,28 +59,12 @@ namespace Core.Infrastructure
                 return new FriendshipRepository(connectionString, mapper);
             });
 
-
-            services.AddMassTransit(busConfigurator =>
+            services.AddScoped<IPostRepository>(sp =>
             {
-                busConfigurator.SetKebabCaseEndpointNameFormatter();
-
-                busConfigurator.UsingRabbitMq((context, rabbitMqConfigurator) =>
-                {
-                    var rabbitMqSettings = configuration.GetSection("RabbitMqSettings");
-
-                    rabbitMqConfigurator.Host(rabbitMqSettings["HostName"], "/", h =>
-                    {
-                        h.Username(rabbitMqSettings["UserName"]);
-                        h.Password(rabbitMqSettings["Password"]);
-                    });
-
-                    rabbitMqConfigurator.ReceiveEndpoint(rabbitMqSettings["QueueName"], endpointConfigurator =>
-                    {
-
-                    });
-                });
+                var connectionString = configuration.GetSection("DatabaseSettings:ConnectionString").Value;
+                var mapper = sp.GetRequiredService<IMapper>();
+                return new PostRepository(connectionString, mapper);
             });
-            services.AddTransient<IEventBus,RabbitMQEventBus>();
 
             return services;
         }

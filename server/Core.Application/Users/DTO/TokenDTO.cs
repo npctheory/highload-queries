@@ -5,5 +5,5 @@ namespace Core.Application.Users.DTO;
 
 public class TokenDTO
 {
-    public string Value { get; set; }
+    public string token { get; set; }
 }

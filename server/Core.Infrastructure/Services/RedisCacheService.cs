@@ -29,7 +29,7 @@ namespace Core.Application.Services
             return JsonSerializer.Deserialize<T>(redisValue);
         }
 
-        public async Task<T> SetAsync<T>(string key, T value, CancellationToken cancellationToken = default) where T : class
+        public async Task<T> SetAsync<T>(string key, T value, TimeSpan? expiration = null, CancellationToken cancellationToken = default) where T : class
         {
             if (string.IsNullOrWhiteSpace(key))
                 throw new ArgumentException("Key cannot be null or whitespace.", nameof(key));
@@ -38,7 +38,8 @@ namespace Core.Application.Services
                 throw new ArgumentNullException(nameof(value));
 
             var serializedValue = JsonSerializer.Serialize(value);
-            await _database.StringSetAsync(key, serializedValue);
+
+            await _database.StringSetAsync(key, serializedValue, expiration);
 
             return value;
         }

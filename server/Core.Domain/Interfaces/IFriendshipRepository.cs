@@ -9,5 +9,6 @@ public interface IFriendshipRepository
     Task AddFriendship(string userId, string friendId);
     Task DeleteFriendship(string userId, string friendId);
     Task<List<Friendship>> ListFriendships(string userId);
+    Task<List<Friendship>> ListUsersWithFriend(string friendId);
 }
 

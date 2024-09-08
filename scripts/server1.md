@@ -108,6 +108,23 @@ dotnet add server/Core.Infrastructure/ package Microsoft.AspNetCore.SignalR
 
 ```
 
+**UserLoggedInEvent.cs**
+```csharp
+using MediatR;
+
+namespace EventBus.Events;
+
+public class UserLoggedInEvent : INotification
+{
+    public string UserId { get; set; }
+
+    public UserLoggedInEvent(string userId)
+    {
+        UserId = userId;
+    }
+}
+```
+
 
 **User.cs**
 ```csharp
@@ -179,7 +196,7 @@ public interface ICacheService
     Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default)
         where T : class;
 
-    Task<T> SetAsync<T>(string key, T value, CancellationToken cancellationToken = default)
+    Task<T> SetAsync<T>(string key, T value, TimeSpan? expiration = null, CancellationToken cancellationToken = default)
         where T : class;
 
     Task RemoveAsync(string key, CancellationToken cancellationToken = default);
@@ -278,7 +295,7 @@ namespace Core.Application.Users.DTO;
 
 public class TokenDTO
 {
-    public string Value { get; set; }
+    public string token { get; set; }
 }
 ```
 
@@ -397,6 +414,8 @@ using Core.Domain.Interfaces;
 using AutoMapper;
 using MediatR;
 using System.Security.Claims;
+using EventBus.Events;
+using EventBus;
 
 namespace Core.Application.Users.Queries.Login
 {
@@ -405,15 +424,18 @@ namespace Core.Application.Users.Queries.Login
         private readonly IUserRepository _userRepository;
         private readonly IJwtTokenGenerator _jwtTokenGenerator;
         private readonly IMapper _mapper;
+        private readonly IEventBus _eventBus;
 
         public LoginQueryHandler(
             IUserRepository userRepository,
             IJwtTokenGenerator jwtTokenGenerator,
-            IMapper mapper)
+            IMapper mapper,
+            IEventBus eventBus)
         {
             _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
             _jwtTokenGenerator = jwtTokenGenerator ?? throw new ArgumentNullException(nameof(jwtTokenGenerator));
             _mapper = mapper ?? throw new ArgumentNullException(nameof(mapper));
+            _eventBus = eventBus;
         }
 
         public async Task<TokenDTO> Handle(LoginQuery request, CancellationToken cancellationToken)
@@ -427,9 +449,11 @@ namespace Core.Application.Users.Queries.Login
 
             TokenDTO token = new TokenDTO
             {
-                Value = _jwtTokenGenerator.GenerateToken(user.Id, user.FirstName, user.SecondName),
+                token = _jwtTokenGenerator.GenerateToken(user.Id, user.FirstName, user.SecondName),
             };
 
+            var userLoggedInEvent = new UserLoggedInEvent(request.Id);
+            await _eventBus.PublishAsync(userLoggedInEvent, cancellationToken);
 
             return token;
         }
@@ -838,7 +862,7 @@ namespace Core.Application.Services
             return JsonSerializer.Deserialize<T>(redisValue);
         }
 
-        public async Task<T> SetAsync<T>(string key, T value, CancellationToken cancellationToken = default) where T : class
+        public async Task<T> SetAsync<T>(string key, T value, TimeSpan? expiration = null, CancellationToken cancellationToken = default) where T : class
         {
             if (string.IsNullOrWhiteSpace(key))
                 throw new ArgumentException("Key cannot be null or whitespace.", nameof(key));
@@ -847,7 +871,8 @@ namespace Core.Application.Services
                 throw new ArgumentNullException(nameof(value));
 
             var serializedValue = JsonSerializer.Serialize(value);
-            await _database.StringSetAsync(key, serializedValue);
+
+            await _database.StringSetAsync(key, serializedValue, expiration);
 
             return value;
         }
@@ -956,6 +981,9 @@ using Microsoft.Extensions.Configuration;
 using Core.Infrastructure.Generators;
 using System.Text;
 using Core.Infrastructure.Providers;
+using EventBus;
+using EventBus.Events;
+
 
 namespace Core.Infrastructure
 {
@@ -992,26 +1020,19 @@ namespace Core.Infrastructure
                 return new UserRepository(connectionString, mapper);
             });
 
-
-            services.AddMassTransit(busConfigurator =>
+            services.AddScoped<IFriendshipRepository>(sp =>
             {
-                busConfigurator.UsingRabbitMq((context, rabbitMqConfigurator) =>
-                {
-                    var rabbitMqSettings = configuration.GetSection("RabbitMqSettings");
-
-                    rabbitMqConfigurator.Host(rabbitMqSettings["HostName"], "/", h =>
-                    {
-                        h.Username(rabbitMqSettings["UserName"]);
-                        h.Password(rabbitMqSettings["Password"]);
-                    });
-
-                    rabbitMqConfigurator.ReceiveEndpoint(rabbitMqSettings["QueueName"], endpointConfigurator =>
-                    {
-
-                    });
-                });
+                var connectionString = configuration.GetSection("DatabaseSettings:ConnectionString").Value;
+                var mapper = sp.GetRequiredService<IMapper>();
+                return new FriendshipRepository(connectionString, mapper);
             });
-            services.AddTransient<IEventBus,EventBus>();
+
+            services.AddScoped<IPostRepository>(sp =>
+            {
+                var connectionString = configuration.GetSection("DatabaseSettings:ConnectionString").Value;
+                var mapper = sp.GetRequiredService<IMapper>();
+                return new PostRepository(connectionString, mapper);
+            });
 
             return services;
         }
@@ -1033,7 +1054,7 @@ namespace Core.Infrastructure
   "AllowedHosts": "*",
   "JwtSettings": {
     "Secret": "this-is-a-very-secure-and-long-key-32-bytes-long",
-    "ExpirationTimeInMinutes": 60000,
+    "ExpirationTimeInMinutes": 5256000,
     "Issuer": "HighloadSocial",
     "Audience": "HighloadSocial"
   },
@@ -1041,10 +1062,11 @@ namespace Core.Infrastructure
     "HostName": "rabbitmq",
     "UserName": "guest",
     "Password": "guest",
-    "QueueName": "my_queue"
+    "QueueName": "core_queue"
   },
   "RedisSettings": {
-    "ConnectionString": "redis:6379"
+    "ConnectionString": "redis:6379",
+    "PostFeedTTLInMinutes": 5
   },
   "DatabaseSettings": {
     "ConnectionString": "Host=pg_master;Port=5432;Database=highloadsocial;Username=postgres;Password=postgres;"
@@ -1064,7 +1086,7 @@ namespace Core.Infrastructure
   "AllowedHosts": "*",
   "JwtSettings": {
     "Secret": "this-is-a-very-secure-and-long-key-32-bytes-long",
-    "ExpirationTimeInMinutes": 60000,
+    "ExpirationTimeInMinutes": 5256000,
     "Issuer": "HighloadSocial",
     "Audience": "HighloadSocial"
   },
@@ -1072,7 +1094,7 @@ namespace Core.Infrastructure
     "HostName": "localhost",
     "UserName": "guest",
     "Password": "guest",
-    "QueueName": "my_queue"
+    "QueueName": "core_queue"
   },
   "RedisSettings": {
     "ConnectionString": "localhost:6379"
@@ -1086,8 +1108,13 @@ namespace Core.Infrastructure
 **Core.Api/DependencyInjection.cs**
 ```csharp
 using System.Text;
+using Core.Api.EventConsumers;
 using Core.Infrastructure.Configuration;
+using Core.Infrastructure.Services;
+using EventBus;
+using MassTransit;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.IdentityModel.Tokens;
 
 namespace Core.Api
@@ -1121,6 +1148,35 @@ namespace Core.Api
                     IssuerSigningKey = new SymmetricSecurityKey(key)
                 };
             });
+
+            services.AddMassTransit(busConfigurator =>
+            {
+                busConfigurator.SetKebabCaseEndpointNameFormatter();
+                busConfigurator.AddConsumer<UserEventConsumer>();
+                busConfigurator.AddConsumer<FriendEventConsumer>();
+                busConfigurator.AddConsumer<PostEventConsumer>();
+
+                busConfigurator.UsingRabbitMq((context, rabbitMqConfigurator) =>
+                {
+                    var rabbitMqSettings = configuration.GetSection("RabbitMqSettings");
+
+                    rabbitMqConfigurator.Host(rabbitMqSettings["HostName"], "/", h =>
+                    {
+                        h.Username(rabbitMqSettings["UserName"]);
+                        h.Password(rabbitMqSettings["Password"]);
+                    });
+
+                rabbitMqConfigurator.ReceiveEndpoint("core_queue", endpointConfigurator =>
+                    {
+                    endpointConfigurator.ConfigureConsumer<UserEventConsumer>(context);
+                    endpointConfigurator.ConfigureConsumer<FriendEventConsumer>(context);
+                    endpointConfigurator.ConfigureConsumer<PostEventConsumer>(context);
+                    });
+                });
+            });
+            services.AddTransient<IEventBus,RabbitMQEventBus>();
+
+            services.AddSignalR();
 
             return services;
         }
@@ -1232,25 +1288,30 @@ namespace Core.Api.Controllers
 
 ```dockerfile
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
-WORKDIR /src
+WORKDIR ./server
 COPY HighloadSocial.sln ./
 COPY Core.Api/Core.Api.csproj ./Core.Api/
 COPY Core.Application/Core.Application.csproj ./Core.Application/
 COPY Core.Infrastructure/Core.Infrastructure.csproj ./Core.Infrastructure/
 COPY Core.Domain/Core.Domain.csproj ./Core.Domain/
+COPY EventBus/EventBus.csproj ./EventBus/
 RUN dotnet restore
 COPY . .
 RUN dotnet publish Core.Api/Core.Api.csproj -c Release -o /app/publish
+
 FROM mcr.microsoft.com/dotnet/aspnet:8.0
 WORKDIR /app
 COPY --from=build /app/publish .
-RUN apt-get update && \
-    apt-get install -y python3 python3-venv python3-pip && \
-    python3 -m venv /opt/venv && \
-    /opt/venv/bin/python -m pip install --upgrade pip && \
-    /opt/venv/bin/python -m pip install psycopg2-binary requests==2.31.0
-ENV VIRTUAL_ENV=/opt/venv
-ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+
+# Ansible
+# RUN apt-get update && \
+#     apt-get install -y python3 python3-venv python3-pip && \
+#     python3 -m venv /opt/venv && \
+#     /opt/venv/bin/python -m pip install --upgrade pip && \
+#     /opt/venv/bin/python -m pip install psycopg2-binary requests==2.31.0
+# ENV VIRTUAL_ENV=/opt/venv
+# ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+
 ARG UID=10001
 RUN adduser --disabled-password --gecos "" --home "/nonexistent" --shell "/sbin/nologin" --no-create-home --uid "${UID}" appuser
 USER appuser
