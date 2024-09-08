@@ -16,6 +16,12 @@ services:
       - "35432:5432"
     volumes:
       - pg_master:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "bash", "/docker-healthcheck/check_postgres_seed.sh"]
+      interval: 30s
+      timeout: 10s
+      retries: 99999
+      start_period: 0s
     networks:
       - highload_net
 
@@ -71,11 +77,21 @@ services:
       ASPNETCORE_ENVIRONMENT: Production
       ASPNETCORE_URLS: "http://*:80"
     depends_on:
-      - pg_master
+      pg_master:
+        condition: service_healthy
     networks:
       - highload_net
     ports:
       - "8080:80"
+      
+  redisinsight:
+    image: redis/redisinsight:latest
+    container_name: redisinsight
+    restart: unless-stopped
+    ports:
+      - "5540:5540"
+    networks:
+      - highload_net
 
 volumes:
   pg_master:

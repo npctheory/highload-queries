@@ -1,7 +1,7 @@
 ```bash
 mkdir -p server/Core.Application/Posts/DTO/
 mkdir -p server/Core.Application/Posts/Queries/ListPosts/
-mkdir -p server/Core.Application/Posts/Queries/GetPostsFeed/
+mkdir -p server/Core.Application/Posts/Queries/ListFriendsPosts/
 mkdir -p server/Core.Application/Posts/Commands/CreatePost/
 mkdir -p server/Core.Application/Posts/Queries/GetPost/
 mkdir -p server/Core.Application/Posts/Commands/UpdatePost/
@@ -14,8 +14,8 @@ touch server/Core.Domain/Interfaces/IPostRepository.cs
 touch server/Core.Application/Posts/DTO/PostDTO.cs
 touch server/Core.Application/Posts/Queries/ListPosts/ListPostsQuery.cs
 touch server/Core.Application/Posts/Queries/ListPosts/ListPostsQueryHandler.cs
-touch server/Core.Application/Posts/Queries/GetPostsFeed/GetPostsFeedQuery.cs
-touch server/Core.Application/Posts/Queries/GetPostsFeed/GetPostsFeedQueryHandler.cs
+touch server/Core.Application/Posts/Queries/ListFriendsPosts/ListFriendsPostsQuery.cs
+touch server/Core.Application/Posts/Queries/ListFriendsPosts/ListFriendsPostsQueryHandler.cs
 touch server/Core.Application/Posts/Queries/GetPost/GetPostQuery.cs
 touch server/Core.Application/Posts/Queries/GetPost/GetPostQueryHandler.cs
 

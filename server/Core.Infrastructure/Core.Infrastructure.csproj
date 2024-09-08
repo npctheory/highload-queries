@@ -11,6 +11,7 @@
     <PackageReference Include="Bogus" Version="35.6.0" />
     <PackageReference Include="MassTransit" Version="8.2.5" />
     <PackageReference Include="MassTransit.RabbitMQ" Version="8.2.5" />
+    <PackageReference Include="Microsoft.AspNetCore.SignalR" Version="1.1.0" />
     <PackageReference Include="Microsoft.IdentityModel.Tokens" Version="8.0.2" />
     <PackageReference Include="Npgsql" Version="8.0.3" />
     <PackageReference Include="StackExchange.Redis" Version="2.8.0" />

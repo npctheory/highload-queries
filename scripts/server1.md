@@ -88,9 +88,13 @@ touch server/Core.Api/Dockerfile
 dotnet add server/Core.Api/ package Microsoft.AspNetCore.Authentication.JwtBearer
 dotnet add server/Core.Api/ package Microsoft.Extensions.Options
 dotnet add server/Core.Api/ package Microsoft.Extensions.Options.ConfigurationExtensions
-dotnet add server/Core.Application/ package MediatR
+dotnet add server/Core.Api/ package Microsoft.AspNetCore.SignalR
+
+
 dotnet add server/Core.Application/ package AutoMapper
 dotnet add server/Core.Application/ package Microsoft.Extensions.Configuration
+
+dotnet add server/EventBus/ package MediatR
 
 dotnet add server/Core.Infrastructure/ package Microsoft.IdentityModel.Tokens
 dotnet add server/Core.Infrastructure/ package System.IdentityModel.Tokens.Jwt
@@ -99,6 +103,9 @@ dotnet add server/Core.Infrastructure/ package Bogus
 dotnet add server/Core.Infrastructure/ package Npgsql
 dotnet add server/Core.Infrastructure/ package StackExchange.Redis
 dotnet add server/Core.Infrastructure/ package MassTransit.RabbitMQ
+dotnet add server/Core.Infrastructure/ package Microsoft.AspNetCore.SignalR
+
+
 ```
 
 
