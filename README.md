@@ -22,7 +22,8 @@ docker compose up --build -d
 
 ## Формирование ленты постов через постановку задачи в очередь  
 Для асинхронного формирования/обновления кэша ленты пользователей используются классы пространства имен Core.Application.Posts.Queries.GetPostFeed: PostFeedCacheBuilder и FriendsPostFeedCacheRebuilder.  
-PostFeedCacheBuilder - для ребилда ленты постов автора события, FriendsPostFeedCacheRebuilder - для массового ребилда кэшей друзей автора события.
+PostFeedCacheBuilder - для ребилда ленты постов автора события,  
+FriendsPostFeedCacheRebuilder - для массового ребилда кэшей друзей автора события.  
 Также хэндлер GetPostFeedQueryHandler самостоятельно синхронно формирует кэши ленты постов если по ключу в Редисе не найдены данные - создает кэш на первую 1000 постов если offset+limit не больше 1000, и кэширует все запросы свыше тысячи по динамическому ключу.  
 Пространство имен EventBus.Events содержит классы событий, которые отправляются в in-memory шину MediatR или внешнюю шину RabbitMQ. Работа с RabbitMQ происходит через библиотеку MassTransit. 
 При каждом успешном входе пользователя, добавлении или удалении друга создаются соответствующие события UserLoggedInEvent, FriendAddedEvent, FriendDeletedEvent которые отправляются в RabbitMQ, и из консюмеров MassTransit вызывают класс PostFeedCacheBuilder, который пересобирает кэш первой 1000 постов из ленты.  
